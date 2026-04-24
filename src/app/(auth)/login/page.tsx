@@ -6,6 +6,8 @@ import { createClient } from "@/lib/supabase/client";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
+import { trpc } from "@/lib/trpc/client";
+import { CheckCircle, X } from "lucide-react";
 
 const schema = z.object({
   email: z.string().email("Correo inválido"),
@@ -13,10 +15,98 @@ const schema = z.object({
 });
 type FormData = z.infer<typeof schema>;
 
+// ── Modal: Solicitar acceso ───────────────────────────────────────────────────
+
+function RequestAccessModal({ onClose }: { onClose: () => void }) {
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [notes, setNotes] = useState("");
+  const [done, setDone] = useState(false);
+
+  const request = trpc.auth.requestAccess.useMutation({
+    onSuccess: () => setDone(true),
+  });
+
+  const inputCls = "mt-1 w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-mk-pink/30";
+
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
+      <div className="bg-white rounded-t-3xl sm:rounded-3xl p-6 w-full sm:max-w-md shadow-2xl">
+        <div className="flex items-center justify-between mb-5">
+          <div>
+            <p className="text-xs font-semibold text-mk-pink uppercase tracking-widest">Acceso</p>
+            <h2 className="text-lg font-bold text-gray-900">Solicitar acceso</h2>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100">
+            <X size={16} className="text-gray-500" />
+          </button>
+        </div>
+
+        {done ? (
+          <div className="text-center py-6 space-y-3">
+            <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto">
+              <CheckCircle size={32} className="text-green-500" />
+            </div>
+            <h3 className="text-lg font-bold text-gray-900">¡Solicitud enviada!</h3>
+            <p className="text-sm text-gray-500">
+              Un administrador revisará tu solicitud y te enviará las credenciales de acceso.
+            </p>
+            <button onClick={onClose} className="mt-2 w-full py-2.5 mk-gradient text-white font-semibold rounded-xl text-sm">
+              Entendido
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <p className="text-sm text-gray-500">
+              Completa el formulario y un administrador te dará acceso al sistema.
+            </p>
+
+            <div>
+              <label className="text-sm font-medium text-gray-700">Nombre completo *</label>
+              <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Tu nombre" className={inputCls} />
+            </div>
+
+            <div>
+              <label className="text-sm font-medium text-gray-700">Correo electrónico *</label>
+              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="tu@correo.com" className={inputCls} />
+            </div>
+
+            <div>
+              <label className="text-sm font-medium text-gray-700">WhatsApp / Teléfono</label>
+              <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="809-555-1234" className={inputCls} />
+            </div>
+
+            <div>
+              <label className="text-sm font-medium text-gray-700">Mensaje (opcional)</label>
+              <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} placeholder="¿Quieres ser consultora o directora?" className={`${inputCls} resize-none`} />
+            </div>
+
+            {request.error && (
+              <p className="text-red-500 text-sm bg-red-50 px-3 py-2 rounded-xl">{request.error.message}</p>
+            )}
+
+            <button
+              onClick={() => request.mutate({ name, email, phone: phone || undefined, notes: notes || undefined })}
+              disabled={!name.trim() || !email.trim() || request.isPending}
+              className="w-full py-3 mk-gradient text-white font-semibold rounded-xl text-sm disabled:opacity-60 hover:opacity-90 transition-opacity"
+            >
+              {request.isPending ? "Enviando..." : "Enviar solicitud"}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Login ─────────────────────────────────────────────────────────────────────
+
 export default function LoginPage() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [showRequest, setShowRequest] = useState(false);
 
   const {
     register,
@@ -104,9 +194,14 @@ export default function LoginPage() {
         </div>
 
         <p className="text-center text-xs text-gray-400 mt-6">
-          Contacta al administrador para obtener acceso
+          ¿No tienes acceso?{" "}
+          <button onClick={() => setShowRequest(true)} className="text-mk-pink font-semibold hover:underline">
+            Solicitar acceso
+          </button>
         </p>
       </div>
+
+      {showRequest && <RequestAccessModal onClose={() => setShowRequest(false)} />}
     </div>
   );
 }

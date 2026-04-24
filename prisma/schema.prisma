@@ -58,7 +58,7 @@ enum UserCreationStatus {
 
 model UserCreationRequest {
   id          String             @id @default(cuid())
-  requesterId String
+  requesterId String?
   name        String
   email       String
   phone       String?
@@ -70,7 +70,7 @@ model UserCreationRequest {
   createdAt   DateTime           @default(now())
   updatedAt   DateTime           @updatedAt
 
-  requester User  @relation("RequestedBy", fields: [requesterId], references: [id], onDelete: Cascade)
+  requester User?  @relation("RequestedBy", fields: [requesterId], references: [id], onDelete: SetNull)
   parent    User? @relation("RequestParent", fields: [parentId], references: [id])
 
   @@index([requesterId])

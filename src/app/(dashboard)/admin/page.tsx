@@ -416,7 +416,10 @@ function RequestsTab() {
                   </div>
                   <p className="text-xs text-gray-500">{req.email}{req.phone && ` · ${req.phone}`}</p>
                   <p className="text-xs text-gray-400 mt-1">
-                    Solicitada por <span className="font-medium text-gray-600">{req.requester?.name}</span>
+                    {req.requester
+                      ? <>Solicitada por <span className="font-medium text-gray-600">{req.requester.name}</span></>
+                      : <span className="inline-flex items-center gap-1 text-mk-pink font-medium">Solicitud pública (login)</span>
+                    }
                     {req.parent && <> · Reporta a <span className="font-medium text-gray-600">{req.parent.name}</span></>}
                   </p>
                   {req.reviewNote && (
