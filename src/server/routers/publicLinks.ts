@@ -43,22 +43,29 @@ export const publicLinksRouter = router({
   submitRequest: publicProcedure
     .input(
       z.object({
-        productId: z.string(),
         consultantId: z.string(),
         clientName: z.string().min(2),
         clientPhone: z.string().optional(),
         message: z.string().optional(),
+        items: z
+          .array(z.object({ productId: z.string(), quantity: z.number().int().min(1).default(1) }))
+          .min(1),
       })
     )
     .mutation(async ({ ctx, input }) => {
-      return ctx.prisma.productRequest.create({
-        data: {
-          productId: input.productId,
-          consultantId: input.consultantId,
-          clientName: input.clientName,
-          clientPhone: input.clientPhone,
-          message: input.message,
-        },
-      });
+      await ctx.prisma.$transaction(
+        input.items.map((item) =>
+          ctx.prisma.productRequest.create({
+            data: {
+              productId: item.productId,
+              consultantId: input.consultantId,
+              clientName: input.clientName,
+              clientPhone: input.clientPhone ?? null,
+              message: input.message ?? null,
+            },
+          })
+        )
+      );
+      return { success: true };
     }),
 });
