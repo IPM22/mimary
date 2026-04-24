@@ -45,10 +45,12 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-mk-pink-light via-white to-mk-gold-light p-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <div className="w-20 h-20 rounded-full mk-gradient mx-auto flex items-center justify-center shadow-lg mb-4">
-            <span className="text-white font-bold text-2xl">MK</span>
+          <div className="w-20 h-20 rounded-2xl mk-gradient mx-auto flex items-center justify-center shadow-lg mb-4 overflow-hidden">
+            <img src="/logo.png" alt="MiMary" className="w-full h-full object-contain p-2" />
           </div>
-          <h1 className="text-2xl font-bold text-gray-900">Mary Kay</h1>
+          <h1 className="text-2xl font-bold text-gray-900">
+            <span className="text-gray-800">Mi</span><span className="text-mk-pink">Mary</span>
+          </h1>
           <p className="text-gray-500 text-sm mt-1">Sistema de Gestión</p>
         </div>
 
