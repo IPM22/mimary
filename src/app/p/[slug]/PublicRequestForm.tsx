@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { trpc } from "@/lib/trpc/client";
-import { CheckCircle, MessageCircle, ShoppingBag, Plus, Minus, X } from "lucide-react";
+import { CheckCircle, MessageCircle, ShoppingBag, Plus, Minus, X, Search, ShoppingCart } from "lucide-react";
 
 type ProductInfo = {
   id: string;
@@ -50,8 +50,129 @@ function waUrl(phone: string, consultantName: string, clientName: string, items:
   return `https://wa.me/${e164}?text=${encodeURIComponent(text)}`;
 }
 
+const WaIcon = () => (
+  <svg viewBox="0 0 24 24" className="w-4 h-4 fill-current">
+    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z" />
+  </svg>
+);
+
+// ── Modal: Catálogo completo ───────────────────────────────────────────────────
+
+function CatalogModal({
+  items,
+  cart,
+  onAdd,
+  onUpdateQty,
+  onClose,
+}: {
+  items: CatalogItem[];
+  cart: CartItem[];
+  onAdd: (item: CatalogItem) => void;
+  onUpdateQty: (productId: string, delta: number) => void;
+  onClose: () => void;
+}) {
+  const [search, setSearch] = useState("");
+
+  const filtered = useMemo(() => {
+    if (!search.trim()) return items;
+    const q = search.toLowerCase();
+    return items.filter(
+      (i) =>
+        i.product.name.toLowerCase().includes(q) ||
+        (i.product.category ?? "").toLowerCase().includes(q)
+    );
+  }, [items, search]);
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
+      <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full sm:max-w-3xl shadow-2xl flex flex-col max-h-[90vh]">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 flex-shrink-0">
+          <div>
+            <h2 className="font-bold text-gray-900 text-lg">Catálogo de productos</h2>
+            <p className="text-xs text-gray-400">{items.length} productos disponibles</p>
+          </div>
+          <button onClick={onClose} className="w-9 h-9 rounded-full hover:bg-gray-100 flex items-center justify-center transition-colors">
+            <X size={18} className="text-gray-500" />
+          </button>
+        </div>
+
+        {/* Búsqueda */}
+        <div className="px-5 py-3 border-b border-gray-100 flex-shrink-0">
+          <div className="relative">
+            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Buscar producto o categoría..."
+              className="w-full pl-9 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-mk-pink/30"
+            />
+          </div>
+        </div>
+
+        {/* Grid de productos */}
+        <div className="overflow-y-auto flex-1 p-5">
+          {filtered.length === 0 ? (
+            <p className="text-center text-gray-400 text-sm py-12">No se encontraron productos</p>
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+              {filtered.map(({ product, price }) => {
+                const inCart = cart.find((c) => c.productId === product.id);
+                return (
+                  <div key={product.id} className="bg-gray-50 rounded-2xl p-3 flex flex-col">
+                    <div className="aspect-square rounded-xl overflow-hidden bg-white mb-2">
+                      {product.images[0] ? (
+                        <img src={product.images[0]} alt={product.name} className="w-full h-full object-cover" loading="lazy" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-gray-200 text-3xl">📦</div>
+                      )}
+                    </div>
+                    {product.category && <p className="text-[10px] text-gray-400 truncate">{product.category}</p>}
+                    <p className="text-sm font-semibold text-gray-900 leading-tight line-clamp-2 mt-0.5 flex-1">{product.name}</p>
+                    {price && <p className="text-sm font-bold text-mk-pink mt-1">{fmt(price)}</p>}
+                    <div className="mt-2">
+                      {inCart ? (
+                        <div className="flex items-center justify-between gap-1">
+                          <button onClick={() => onUpdateQty(product.id, -1)} className="w-8 h-8 rounded-full bg-white shadow-sm flex items-center justify-center hover:bg-gray-100 transition-colors">
+                            <Minus size={13} />
+                          </button>
+                          <span className="text-sm font-bold text-gray-900">{inCart.quantity}</span>
+                          <button onClick={() => onUpdateQty(product.id, 1)} className="w-8 h-8 rounded-full mk-gradient flex items-center justify-center">
+                            <Plus size={13} className="text-white" />
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => onAdd({ product, price })}
+                          className="w-full py-2 mk-gradient text-white text-xs font-semibold rounded-xl flex items-center justify-center gap-1 hover:opacity-90 transition-opacity"
+                        >
+                          <Plus size={12} /> Agregar
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="px-5 py-4 border-t border-gray-100 flex-shrink-0">
+          <button onClick={onClose} className="w-full py-3 mk-gradient text-white font-bold rounded-2xl text-sm hover:opacity-90 transition-opacity">
+            Listo · {cart.reduce((s, i) => s + i.quantity, 0)} producto(s) en pedido
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Componente principal ───────────────────────────────────────────────────────
+
 export function PublicRequestForm({ consultant, mainProduct, mainProductPrice, catalogItems }: Props) {
   const [activeImg, setActiveImg] = useState(0);
+  const [showCatalog, setShowCatalog] = useState(false);
   const [cart, setCart] = useState<CartItem[]>([
     {
       productId: mainProduct.id,
@@ -102,9 +223,7 @@ export function PublicRequestForm({ consultant, mainProduct, mainProductPrice, c
           </div>
           <div>
             <h2 className="text-2xl font-bold text-gray-900">¡Solicitud enviada!</h2>
-            <p className="text-gray-500 text-sm mt-1">
-              {consultant.name} te contactará pronto.
-            </p>
+            <p className="text-gray-500 text-sm mt-1">{consultant.name} te contactará pronto.</p>
           </div>
           <div className="bg-gray-50 rounded-2xl p-4 text-left space-y-2">
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Tu pedido</p>
@@ -128,8 +247,7 @@ export function PublicRequestForm({ consultant, mainProduct, mainProductPrice, c
               rel="noopener noreferrer"
               className="flex items-center justify-center gap-2 w-full py-4 bg-[#25D366] hover:bg-[#1ebe5d] text-white font-bold rounded-2xl text-base shadow-lg transition-colors"
             >
-              <svg viewBox="0 0 24 24" className="w-5 h-5 fill-current"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
-              Escribir por WhatsApp
+              <WaIcon /> Escribir por WhatsApp
             </a>
           )}
         </div>
@@ -140,8 +258,8 @@ export function PublicRequestForm({ consultant, mainProduct, mainProductPrice, c
   return (
     <div className="min-h-screen bg-gradient-to-br from-pink-50 via-white to-rose-50">
       {/* Header */}
-      <div className="mk-gradient px-5 py-4 flex items-center gap-3">
-        <div className="w-9 h-9 rounded-xl overflow-hidden bg-white/20 flex items-center justify-center flex-shrink-0">
+      <div className="mk-gradient px-5 py-3 flex items-center gap-3">
+        <div className="w-9 h-9 rounded-xl bg-white flex items-center justify-center flex-shrink-0 p-1 shadow-sm">
           <img src="/logo.png" alt="MiMary" className="w-full h-full object-contain" />
         </div>
         <div>
@@ -155,134 +273,120 @@ export function PublicRequestForm({ consultant, mainProduct, mainProductPrice, c
             rel="noopener noreferrer"
             className="ml-auto flex items-center gap-1.5 bg-white/20 hover:bg-white/30 text-white text-xs font-semibold px-3 py-1.5 rounded-full transition-colors"
           >
-            <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 fill-current"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
-            Contactar
+            <WaIcon /> Contactar
           </a>
         )}
       </div>
 
-      <div className="max-w-lg mx-auto">
-        {/* Galería */}
-        <div className="bg-white">
-          {mainProduct.images.length > 0 ? (
-            <>
-              <div className="aspect-square overflow-hidden bg-gray-50">
-                <img
-                  src={mainProduct.images[activeImg]}
-                  alt={mainProduct.name}
-                  className="w-full h-full object-contain"
-                />
-              </div>
-              {mainProduct.images.length > 1 && (
-                <div className="flex gap-2 px-4 py-3 overflow-x-auto">
-                  {mainProduct.images.slice(0, 6).map((img, i) => (
-                    <button
-                      key={i}
-                      onClick={() => setActiveImg(i)}
-                      className={`w-14 h-14 flex-shrink-0 rounded-xl overflow-hidden border-2 transition-all ${
-                        i === activeImg ? "border-mk-pink scale-105" : "border-transparent opacity-60"
-                      }`}
-                    >
-                      <img src={img} alt="" className="w-full h-full object-cover" />
-                    </button>
-                  ))}
-                </div>
-              )}
-            </>
-          ) : (
-            <div className="aspect-square flex items-center justify-center bg-gray-50 text-gray-200 text-8xl">📦</div>
-          )}
-        </div>
+      {/* Layout: columna única en móvil, dos columnas en desktop */}
+      <div className="max-w-6xl mx-auto lg:grid lg:grid-cols-5 lg:gap-10 lg:px-10 lg:py-8">
 
-        <div className="px-4 pt-5 pb-10 space-y-5">
-          {/* Info del producto */}
-          <div>
-            {(mainProduct.category || mainProduct.subcategory) && (
-              <p className="text-xs font-semibold text-mk-pink uppercase tracking-wider">
-                {mainProduct.category}{mainProduct.subcategory ? ` · ${mainProduct.subcategory}` : ""}
-              </p>
-            )}
-            <h1 className="text-2xl font-bold text-gray-900 mt-1 leading-tight">{mainProduct.name}</h1>
-            {mainProductPrice && (
-              <p className="text-3xl font-bold text-mk-pink mt-2">{fmt(mainProductPrice)}</p>
+        {/* ── Columna izquierda: producto + descripción ── */}
+        <div className="lg:col-span-3">
+          {/* Galería */}
+          <div className="bg-white lg:rounded-2xl lg:overflow-hidden lg:shadow-sm">
+            {mainProduct.images.length > 0 ? (
+              <>
+                <div className="aspect-square overflow-hidden bg-gray-50">
+                  <img src={mainProduct.images[activeImg]} alt={mainProduct.name} className="w-full h-full object-contain" />
+                </div>
+                {mainProduct.images.length > 1 && (
+                  <div className="flex gap-2 px-4 py-3 overflow-x-auto">
+                    {mainProduct.images.slice(0, 8).map((img, i) => (
+                      <button
+                        key={i}
+                        onClick={() => setActiveImg(i)}
+                        className={`w-14 h-14 flex-shrink-0 rounded-xl overflow-hidden border-2 transition-all ${
+                          i === activeImg ? "border-mk-pink scale-105" : "border-transparent opacity-50 hover:opacity-80"
+                        }`}
+                      >
+                        <img src={img} alt="" className="w-full h-full object-cover" />
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="aspect-square flex items-center justify-center bg-gray-50 text-gray-200 text-8xl">📦</div>
             )}
           </div>
 
-          {mainProduct.description && (
-            <p className="text-gray-600 text-sm leading-relaxed">{mainProduct.description}</p>
-          )}
-
-          {mainProduct.benefits && (
-            <div className="bg-mk-pink-light rounded-2xl p-4">
-              <p className="text-xs font-bold text-mk-pink uppercase tracking-wide mb-1">Ingredientes clave</p>
-              <p className="text-sm text-gray-700 leading-relaxed">{mainProduct.benefits}</p>
-            </div>
-          )}
-
-          {mainProduct.howToUse && (
-            <div className="bg-amber-50 rounded-2xl p-4">
-              <p className="text-xs font-bold text-mk-gold uppercase tracking-wide mb-1">Cómo aplicar</p>
-              <p className="text-sm text-gray-700 leading-relaxed">{mainProduct.howToUse}</p>
-            </div>
-          )}
-
-          {mainProduct.howItWorks && (
-            <div className="bg-mk-gold-light rounded-2xl p-4">
-              <p className="text-xs font-bold text-mk-gold uppercase tracking-wide mb-1">Cómo funciona</p>
-              <p className="text-sm text-gray-700 leading-relaxed">{mainProduct.howItWorks}</p>
-            </div>
-          )}
-
-          {mainProduct.ingredients && (
-            <details className="bg-gray-50 rounded-2xl p-4 cursor-pointer">
-              <summary className="text-sm font-semibold text-gray-700">Lista completa de ingredientes</summary>
-              <p className="text-xs text-gray-500 mt-2 leading-relaxed">{mainProduct.ingredients}</p>
-            </details>
-          )}
-
-          {/* Más productos */}
-          {catalogItems.length > 0 && (
+          {/* Info del producto */}
+          <div className="px-4 lg:px-0 pt-5 space-y-4">
             <div>
-              <h2 className="text-base font-bold text-gray-900 mb-3">Más productos disponibles</h2>
-              <div className="grid grid-cols-2 gap-3">
-                {catalogItems.map(({ product, price }) => {
-                  const inCart = cart.find((c) => c.productId === product.id);
-                  return (
-                    <div key={product.id} className="bg-white rounded-2xl p-3 shadow-sm border border-gray-100">
-                      <div className="aspect-square rounded-xl overflow-hidden bg-gray-50 mb-2">
-                        {product.images[0] ? (
-                          <img src={product.images[0]} alt={product.name} className="w-full h-full object-cover" loading="lazy" />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center text-gray-200 text-3xl">📦</div>
-                        )}
-                      </div>
-                      {product.category && <p className="text-[10px] text-gray-400 truncate">{product.category}</p>}
-                      <p className="text-sm font-semibold text-gray-900 leading-tight line-clamp-2 mt-0.5">{product.name}</p>
-                      {price && <p className="text-sm font-bold text-mk-pink mt-1">{fmt(price)}</p>}
-                      {inCart ? (
-                        <div className="flex items-center justify-between mt-2 gap-1">
-                          <button onClick={() => updateQty(product.id, -1)} className="w-7 h-7 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center transition-colors">
-                            <Minus size={13} />
-                          </button>
-                          <span className="text-sm font-bold text-gray-900">{inCart.quantity}</span>
-                          <button onClick={() => updateQty(product.id, 1)} className="w-7 h-7 rounded-full mk-gradient flex items-center justify-center">
-                            <Plus size={13} className="text-white" />
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => addToCart({ product, price })}
-                          className="mt-2 w-full py-2 mk-gradient text-white text-xs font-semibold rounded-xl flex items-center justify-center gap-1 hover:opacity-90 transition-opacity"
-                        >
-                          <Plus size={12} /> Agregar
-                        </button>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
+              {(mainProduct.category || mainProduct.subcategory) && (
+                <p className="text-xs font-semibold text-mk-pink uppercase tracking-wider">
+                  {mainProduct.category}{mainProduct.subcategory ? ` · ${mainProduct.subcategory}` : ""}
+                </p>
+              )}
+              <h1 className="text-2xl lg:text-3xl font-bold text-gray-900 mt-1 leading-tight">{mainProduct.name}</h1>
+              {mainProductPrice && (
+                <p className="text-3xl font-bold text-mk-pink mt-2">{fmt(mainProductPrice)}</p>
+              )}
             </div>
-          )}
+
+            {mainProduct.description && (
+              <p className="text-gray-600 text-sm leading-relaxed">{mainProduct.description}</p>
+            )}
+
+            {mainProduct.benefits && (
+              <div className="bg-mk-pink-light rounded-2xl p-4">
+                <p className="text-xs font-bold text-mk-pink uppercase tracking-wide mb-1">Ingredientes clave</p>
+                <p className="text-sm text-gray-700 leading-relaxed">{mainProduct.benefits}</p>
+              </div>
+            )}
+
+            {mainProduct.howToUse && (
+              <div className="bg-amber-50 rounded-2xl p-4">
+                <p className="text-xs font-bold text-mk-gold uppercase tracking-wide mb-1">Cómo aplicar</p>
+                <p className="text-sm text-gray-700 leading-relaxed">{mainProduct.howToUse}</p>
+              </div>
+            )}
+
+            {mainProduct.howItWorks && (
+              <div className="bg-mk-gold-light rounded-2xl p-4">
+                <p className="text-xs font-bold text-mk-gold uppercase tracking-wide mb-1">Cómo funciona</p>
+                <p className="text-sm text-gray-700 leading-relaxed">{mainProduct.howItWorks}</p>
+              </div>
+            )}
+
+            {mainProduct.generalInfo && (
+              <div className="bg-gray-50 rounded-2xl p-4">
+                <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-1">Información general</p>
+                <p className="text-sm text-gray-700 leading-relaxed">{mainProduct.generalInfo}</p>
+              </div>
+            )}
+
+            {mainProduct.ingredients && (
+              <details className="bg-gray-50 rounded-2xl p-4 cursor-pointer">
+                <summary className="text-sm font-semibold text-gray-700">Lista completa de ingredientes</summary>
+                <p className="text-xs text-gray-500 mt-2 leading-relaxed">{mainProduct.ingredients}</p>
+              </details>
+            )}
+
+            {/* Botón ver más productos */}
+            {catalogItems.length > 0 && (
+              <button
+                onClick={() => setShowCatalog(true)}
+                className="w-full flex items-center justify-between px-5 py-4 bg-white rounded-2xl border-2 border-mk-pink/20 hover:border-mk-pink/50 hover:bg-mk-pink-light transition-all group lg:mb-8"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 mk-gradient rounded-xl flex items-center justify-center flex-shrink-0">
+                    <ShoppingCart size={16} className="text-white" />
+                  </div>
+                  <div className="text-left">
+                    <p className="text-sm font-bold text-gray-900">Ver más productos</p>
+                    <p className="text-xs text-gray-400">{catalogItems.length} productos disponibles</p>
+                  </div>
+                </div>
+                <Plus size={18} className="text-mk-pink group-hover:scale-110 transition-transform" />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* ── Columna derecha: carrito + formulario ── */}
+        <div className="lg:col-span-2 px-4 lg:px-0 pb-10 space-y-5 lg:pt-0 pt-5">
 
           {/* Carrito */}
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
@@ -303,9 +407,7 @@ export function PublicRequestForm({ consultant, mainProduct, mainProductPrice, c
                   )}
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-gray-900 truncate">{item.name}</p>
-                    {item.price && (
-                      <p className="text-xs text-mk-pink font-semibold">{fmt(item.price * item.quantity)}</p>
-                    )}
+                    {item.price && <p className="text-xs text-mk-pink font-semibold">{fmt(item.price * item.quantity)}</p>}
                   </div>
                   <div className="flex items-center gap-1.5 flex-shrink-0">
                     <button onClick={() => updateQty(item.productId, -1)} className="w-6 h-6 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center transition-colors">
@@ -324,6 +426,13 @@ export function PublicRequestForm({ consultant, mainProduct, mainProductPrice, c
                 </div>
               ))}
             </div>
+            {catalogItems.length > 0 && (
+              <div className="px-4 py-2 border-t border-gray-100">
+                <button onClick={() => setShowCatalog(true)} className="w-full py-2 text-mk-pink text-xs font-semibold hover:bg-mk-pink-light rounded-xl transition-colors flex items-center justify-center gap-1">
+                  <Plus size={12} /> Agregar más productos
+                </button>
+              </div>
+            )}
             {allPriced && (
               <div className="px-4 py-3 bg-mk-pink-light flex justify-between items-center">
                 <span className="text-sm text-gray-600 font-medium">Total estimado</span>
@@ -376,7 +485,7 @@ export function PublicRequestForm({ consultant, mainProduct, mainProductPrice, c
               />
             </div>
 
-            {submit.error && <p className="text-red-500 text-sm">{submit.error.message}</p>}
+            {submit.error && <p className="text-red-500 text-sm bg-red-50 px-3 py-2 rounded-xl">{submit.error.message}</p>}
 
             <button
               onClick={() =>
@@ -417,12 +526,23 @@ export function PublicRequestForm({ consultant, mainProduct, mainProductPrice, c
                 rel="noopener noreferrer"
                 className="w-11 h-11 bg-[#25D366] hover:bg-[#1ebe5d] rounded-full flex items-center justify-center flex-shrink-0 transition-colors shadow-sm"
               >
-                <svg viewBox="0 0 24 24" className="w-5 h-5 fill-white"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+                <svg viewBox="0 0 24 24" className="w-5 h-5 fill-white"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z" /></svg>
               </a>
             )}
           </div>
         </div>
       </div>
+
+      {/* Modal catálogo */}
+      {showCatalog && (
+        <CatalogModal
+          items={catalogItems}
+          cart={cart}
+          onAdd={addToCart}
+          onUpdateQty={updateQty}
+          onClose={() => setShowCatalog(false)}
+        />
+      )}
     </div>
   );
 }
