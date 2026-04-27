@@ -40,16 +40,22 @@ function GoalCard({ item }: { item: { goal: any; current: number; target: number
   const pct = Math.min(100, Math.round(percentage));
   const isAmount = goal.type === "SALES_AMOUNT" || goal.type === "GROUP_SALES";
   const completed = pct >= 100;
-  const barColor = completed ? "#22c55e" : pct >= 60 ? "#E91E8C" : "#f59e0b";
+  const expired = new Date(goal.endDate) < new Date();
+  const barColor = completed ? "#22c55e" : expired ? "#9ca3af" : pct >= 60 ? "#E91E8C" : "#f59e0b";
 
   return (
     <div className={`bg-white rounded-2xl p-5 border shadow-sm transition-all hover:shadow-md flex flex-col
-      ${completed ? "border-emerald-100" : "border-gray-100"}`}>
+      ${completed ? "border-emerald-100" : expired ? "border-gray-100 opacity-70" : "border-gray-100"}`}>
       <div className="flex items-start justify-between mb-4">
         <div className="flex-1 min-w-0 mr-4">
-          <p className="font-bold text-gray-900 text-sm leading-tight">
-            {goal.description || TYPE_LABELS[goal.type]}
-          </p>
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="font-bold text-gray-900 text-sm leading-tight">
+              {goal.description || TYPE_LABELS[goal.type]}
+            </p>
+            {expired && !completed && (
+              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-400">Vencida</span>
+            )}
+          </div>
           <p className="text-xs text-gray-400 mt-1">
             {PERIOD_LABELS[goal.period]} · {formatDate(goal.startDate)} – {formatDate(goal.endDate)}
           </p>
@@ -58,7 +64,7 @@ function GoalCard({ item }: { item: { goal: any; current: number; target: number
           )}
         </div>
         <div className="text-right flex-shrink-0">
-          <span className={`text-3xl font-bold ${completed ? "text-emerald-500" : pct >= 60 ? "text-mk-pink" : "text-amber-500"}`}>
+          <span className={`text-3xl font-bold ${completed ? "text-emerald-500" : expired ? "text-gray-400" : pct >= 60 ? "text-mk-pink" : "text-amber-500"}`}>
             {pct}%
           </span>
           {completed && <p className="text-xs text-emerald-500 font-semibold">¡Completada!</p>}
@@ -166,9 +172,10 @@ function NewGoalModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: 
 export default function MetasPage() {
   const { data: user } = trpc.auth.me.useQuery();
   const [showForm, setShowForm] = useState(false);
+  const [onlyActive, setOnlyActive] = useState(false);
   const isDirectora = user?.role === "DIRECTORA" || user?.role === "ADMIN";
   const utils = trpc.useUtils();
-  const { data: goals, isLoading } = trpc.goals.listWithProgress.useQuery({ active: true });
+  const { data: goals, isLoading } = trpc.goals.listWithProgress.useQuery({ active: onlyActive });
 
   return (
     <div className="min-h-full p-4 md:p-8 space-y-6">
@@ -177,12 +184,21 @@ export default function MetasPage() {
           <p className="text-xs font-semibold text-mk-pink uppercase tracking-widest mb-1">Progreso</p>
           <h1 className="text-2xl font-bold text-gray-900">Metas</h1>
         </div>
-        {isDirectora && (
-          <button onClick={() => setShowForm(true)}
-            className="flex items-center gap-2 px-4 py-2.5 bg-mk-pink text-white font-semibold rounded-xl text-sm hover:bg-pink-700 transition-colors shadow-sm shadow-pink-200">
-            <Plus size={15} /><span>Nueva meta</span>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setOnlyActive((v) => !v)}
+            className={`px-3 py-2 rounded-xl text-xs font-semibold border-2 transition-all
+              ${onlyActive ? "border-mk-pink bg-pink-50 text-mk-pink" : "border-gray-100 text-gray-500 hover:border-gray-200 bg-white"}`}
+          >
+            {onlyActive ? "Activas" : "Todas"}
           </button>
-        )}
+          {isDirectora && (
+            <button onClick={() => setShowForm(true)}
+              className="flex items-center gap-2 px-4 py-2.5 bg-mk-pink text-white font-semibold rounded-xl text-sm hover:bg-pink-700 transition-colors shadow-sm shadow-pink-200">
+              <Plus size={15} /><span>Nueva meta</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {isLoading ? (
@@ -194,7 +210,7 @@ export default function MetasPage() {
           <div className="w-16 h-16 rounded-full bg-pink-50 flex items-center justify-center mb-4">
             <Trophy size={26} className="text-mk-pink/40" />
           </div>
-          <p className="text-gray-500 font-medium">Sin metas activas</p>
+          <p className="text-gray-500 font-medium">{onlyActive ? "Sin metas activas" : "No hay metas creadas"}</p>
           {isDirectora && <p className="text-sm text-gray-400 mt-1">Crea una meta para motivar a tu equipo</p>}
         </div>
       ) : (
