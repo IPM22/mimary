@@ -249,6 +249,7 @@ export default function InventarioPage() {
   const [showAdd, setShowAdd] = useState(false);
   const [search, setSearch] = useState("");
   const [stockFilter, setStockFilter] = useState<"" | "ok" | "low" | "out">("");
+  const [alertDismissed, setAlertDismissed] = useState(false);
   const utils = trpc.useUtils();
   const { data: items, isLoading } = trpc.inventory.list.useQuery({});
   const lowStock = items?.filter((i) => i.quantity <= i.alertThreshold) ?? [];
@@ -276,10 +277,15 @@ export default function InventarioPage() {
       </div>
 
       {/* Alerta stock bajo */}
-      {lowStock.length > 0 && (
+      {lowStock.length > 0 && !alertDismissed && (
         <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4">
-          <div className="flex items-center gap-2 text-amber-700 font-semibold text-sm mb-3">
-            <AlertTriangle size={15} />{lowStock.length} producto(s) con stock bajo
+          <div className="flex items-center justify-between gap-2 mb-3">
+            <div className="flex items-center gap-2 text-amber-700 font-semibold text-sm">
+              <AlertTriangle size={15} />{lowStock.length} producto(s) con stock bajo
+            </div>
+            <button onClick={() => setAlertDismissed(true)} className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-amber-100 transition-colors flex-shrink-0">
+              <X size={14} className="text-amber-500" />
+            </button>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
             {lowStock.map((i) => (
