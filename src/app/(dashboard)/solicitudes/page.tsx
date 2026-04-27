@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc/client";
 import {
-  Inbox, Phone, MessageSquare, ChevronLeft, ChevronRight,
+  Inbox, MessageSquare, ChevronLeft, ChevronRight,
   CheckCircle, X, Clock, User, ShoppingCart, Minus, Plus, UserPlus,
 } from "lucide-react";
 import { ClientFormModal } from "@/components/clients/ClientFormModal";
@@ -362,9 +362,17 @@ export default function SolicitudesPage() {
                         <p className="text-xs text-mk-pink font-semibold mt-0.5">× {req.quantity} unidades</p>
                       )}
                     </div>
-                    <span className={`flex-shrink-0 text-xs font-semibold px-2 py-0.5 rounded-full border ${STATUS_COLOR[req.status as Status]}`}>
-                      {STATUS_LABEL[req.status as Status]}
-                    </span>
+                    <select
+                      value={req.status}
+                      onChange={(e) => updateStatus.mutate({ id: req.id, status: e.target.value as Status })}
+                      disabled={updateStatus.isPending}
+                      className={`flex-shrink-0 text-xs font-semibold px-2 py-0.5 rounded-full border cursor-pointer appearance-none text-center disabled:opacity-60 ${STATUS_COLOR[req.status as Status]}`}
+                    >
+                      <option value="PENDING">Pendiente</option>
+                      <option value="CONTACTED">Contactado</option>
+                      <option value="SOLD">Vendido</option>
+                      <option value="DISMISSED">Descartado</option>
+                    </select>
                   </div>
 
                   {/* Cliente */}
@@ -404,62 +412,26 @@ export default function SolicitudesPage() {
               </div>
 
               {/* Acciones */}
-              <div className="px-4 py-3 border-t border-gray-50 space-y-2">
-                {/* Fila principal */}
-                {req.status !== "SOLD" && req.status !== "DISMISSED" && (
-                  <div className="flex gap-2">
-                    {req.status === "PENDING" && (
-                      <button
-                        onClick={() => updateStatus.mutate({ id: req.id, status: "CONTACTED" })}
-                        disabled={updateStatus.isPending}
-                        className="flex items-center gap-1.5 px-3 py-2 bg-blue-50 text-blue-600 border border-blue-200 text-xs font-semibold rounded-xl hover:bg-blue-100 transition-colors disabled:opacity-60"
-                      >
-                        <Phone size={12} /> Contactado
-                      </button>
-                    )}
-                    <button
-                      onClick={() => setSaleTarget(req as unknown as RequestItem)}
-                      className="flex items-center gap-1.5 px-3 py-2 mk-gradient text-white text-xs font-semibold rounded-xl hover:opacity-90 transition-opacity shadow-sm shadow-pink-200"
-                    >
-                      <ShoppingCart size={12} /> Registrar venta
-                    </button>
-                    <button
-                      onClick={() => setClientTarget(req as unknown as RequestItem)}
-                      className="flex items-center gap-1.5 px-3 py-2 bg-purple-50 text-purple-600 border border-purple-200 text-xs font-semibold rounded-xl hover:bg-purple-100 transition-colors"
-                    >
-                      <UserPlus size={12} /> Crear cliente
-                    </button>
-                  </div>
-                )}
-                {/* Fila secundaria */}
-                <div className="flex gap-2">
-                  {req.status !== "SOLD" && req.status !== "DISMISSED" && (
-                    <button
-                      onClick={() => updateStatus.mutate({ id: req.id, status: "SOLD" })}
-                      disabled={updateStatus.isPending}
-                      className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 text-emerald-600 border border-emerald-200 text-xs font-semibold rounded-xl hover:bg-emerald-100 transition-colors disabled:opacity-60"
-                    >
-                      <CheckCircle size={12} /> Marcar vendido
-                    </button>
-                  )}
-                  {req.status !== "SOLD" && req.status !== "DISMISSED" && (
-                    <button
-                      onClick={() => updateStatus.mutate({ id: req.id, status: "DISMISSED" })}
-                      disabled={updateStatus.isPending}
-                      className="flex items-center gap-1.5 px-3 py-1.5 text-gray-400 text-xs font-semibold rounded-xl hover:text-red-500 hover:bg-red-50 transition-colors disabled:opacity-60"
-                    >
-                      <X size={12} /> Descartar
-                    </button>
-                  )}
-                  {(req.status === "SOLD" || req.status === "DISMISSED") && (
-                    <button
-                      onClick={() => setClientTarget(req as unknown as RequestItem)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-50 text-purple-600 border border-purple-200 text-xs font-semibold rounded-xl hover:bg-purple-100 transition-colors"
-                    >
-                      <UserPlus size={12} /> Crear cliente
-                    </button>
-                  )}
-                </div>
+              <div className="px-4 py-3 border-t border-gray-50 flex items-center gap-2">
+                <button
+                  onClick={() => setSaleTarget(req as unknown as RequestItem)}
+                  className="flex items-center gap-1.5 px-3 py-2 mk-gradient text-white text-xs font-bold rounded-xl hover:opacity-90 transition-opacity shadow-sm shadow-pink-200"
+                >
+                  <ShoppingCart size={12} /> Registrar venta
+                </button>
+                <button
+                  onClick={() => setClientTarget(req as unknown as RequestItem)}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-gray-900 text-white text-xs font-bold rounded-xl hover:bg-gray-800 transition-colors"
+                >
+                  <UserPlus size={12} /> Crear cliente
+                </button>
+                <button
+                  onClick={() => updateStatus.mutate({ id: req.id, status: "DISMISSED" })}
+                  disabled={updateStatus.isPending}
+                  className="flex items-center gap-1.5 px-3 py-2 text-gray-400 text-xs font-semibold rounded-xl hover:text-red-500 hover:bg-red-50 transition-colors disabled:opacity-60 ml-auto"
+                >
+                  <X size={12} /> Descartar
+                </button>
               </div>
             </div>
           ))}
