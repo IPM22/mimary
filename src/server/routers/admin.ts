@@ -105,7 +105,7 @@ export const adminRouter = router({
         phone: z.string().optional(),
         mkNumber: z.string().optional(),
         commission: z.number().min(0).max(100).optional(),
-        role: z.enum(["DIRECTORA", "CONSULTORA"]).optional(),
+        role: z.enum(["ADMIN", "DIRECTORA", "CONSULTORA"]).optional(),
         parentId: z.string().nullable().optional(),
         active: z.boolean().optional(),
       })

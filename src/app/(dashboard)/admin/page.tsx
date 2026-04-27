@@ -197,6 +197,7 @@ function UsersTab() {
   const [resetUser, setResetUser] = useState<{ id: string; name: string } | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
+  const { data: me } = trpc.auth.me.useQuery();
   const { data, isLoading } = trpc.admin.listUsers.useQuery({
     search: search || undefined,
     role: roleFilter,
@@ -204,9 +205,10 @@ function UsersTab() {
     limit: 20,
   });
 
-  const toggleActive = trpc.admin.updateUser.useMutation({
+  const updateUser = trpc.admin.updateUser.useMutation({
     onSuccess: () => utils.admin.listUsers.invalidate(),
   });
+  const toggleActive = updateUser;
   const deleteUser = trpc.admin.deleteUser.useMutation({
     onSuccess: () => { setDeleteId(null); utils.admin.listUsers.invalidate(); },
   });
@@ -264,9 +266,22 @@ function UsersTab() {
                       <p className="text-xs text-gray-400">{u.email}</p>
                     </td>
                     <td className="px-4 py-3 hidden sm:table-cell">
-                      <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-full border ${ROLE_BADGE[u.role]}`}>
-                        {ROLE_LABEL[u.role]}
-                      </span>
+                      {u.id === me?.id ? (
+                        <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-full border ${ROLE_BADGE[u.role]}`}>
+                          {ROLE_LABEL[u.role]}
+                        </span>
+                      ) : (
+                        <select
+                          value={u.role}
+                          onChange={(e) => updateUser.mutate({ id: u.id, role: e.target.value as "ADMIN" | "DIRECTORA" | "CONSULTORA" })}
+                          disabled={updateUser.isPending}
+                          className={`text-xs font-semibold px-2.5 py-0.5 rounded-full border cursor-pointer appearance-none disabled:opacity-60 ${ROLE_BADGE[u.role]}`}
+                        >
+                          <option value="ADMIN">Admin</option>
+                          <option value="DIRECTORA">Directora</option>
+                          <option value="CONSULTORA">Consultora</option>
+                        </select>
+                      )}
                     </td>
                     <td className="px-4 py-3 hidden md:table-cell">
                       <span className="text-xs text-gray-500">{(u as any).parent?.name ?? "—"}</span>
