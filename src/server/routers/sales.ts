@@ -114,6 +114,11 @@ export const salesRouter = router({
       // Verificar y descontar inventario
       await ctx.prisma.$transaction(async (tx) => {
         for (const item of input.items) {
+          const product = await tx.product.findUnique({
+            where: { id: item.productId },
+            select: { name: true },
+          });
+
           const invItem = await tx.inventoryItem.findUnique({
             where: {
               userId_productId: {
@@ -123,31 +128,27 @@ export const salesRouter = router({
             },
           });
 
-          if (invItem) {
-            if (invItem.quantity < item.quantity) {
-              const product = await tx.product.findUnique({
-                where: { id: item.productId },
-                select: { name: true },
-              });
-              throw new TRPCError({
-                code: "BAD_REQUEST",
-                message: `Stock insuficiente para: ${product?.name}`,
-              });
-            }
-            const newQty = invItem.quantity - item.quantity;
-            await tx.inventoryItem.update({
-              where: { id: invItem.id },
-              data: { quantity: newQty },
-            });
-            await tx.inventoryMovement.create({
-              data: {
-                inventoryItemId: invItem.id,
-                type: "OUT",
-                quantity: item.quantity,
-                reason: "Venta",
-              },
+          if (!invItem || invItem.quantity < item.quantity) {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: !invItem
+                ? `"${product?.name}" no está en tu inventario`
+                : `Stock insuficiente para "${product?.name}". Disponible: ${invItem.quantity}`,
             });
           }
+
+          await tx.inventoryItem.update({
+            where: { id: invItem.id },
+            data: { quantity: invItem.quantity - item.quantity },
+          });
+          await tx.inventoryMovement.create({
+            data: {
+              inventoryItemId: invItem.id,
+              type: "OUT",
+              quantity: item.quantity,
+              reason: "Venta",
+            },
+          });
         }
 
         const sale = await tx.sale.create({
