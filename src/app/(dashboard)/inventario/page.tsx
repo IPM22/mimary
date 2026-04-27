@@ -38,7 +38,7 @@ function AdjustModal({ item, onClose, onSuccess }: {
   ];
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
       <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl">
         <div className="flex items-center justify-between mb-5">
           <div>
@@ -223,7 +223,7 @@ function AddProductModal({ onClose, onSuccess }: { onClose: () => void; onSucces
   );
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
       <div className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl h-[90vh] overflow-hidden flex flex-col">
         <div className="flex-shrink-0 flex items-center justify-between px-6 py-4 border-b border-gray-100">
           <div>

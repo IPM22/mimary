@@ -145,7 +145,7 @@ function ClientCombobox({ clientId, clientName, onClientChange, onNameChange }: 
 // ── Sale detail modal ───────────────────────────────────────────────────────
 function SaleDetailModal({ sale, onClose, onStatusChange }: { sale: any; onClose: () => void; onStatusChange: (id: string, status: string) => void }) {
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center z-[60] p-0 sm:p-4">
       <div className="bg-white rounded-t-3xl sm:rounded-3xl p-6 w-full sm:max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-5">
           <div>
@@ -292,7 +292,7 @@ function NewSaleModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: 
   }, [cart]);
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-stretch md:items-center justify-center md:p-4">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] flex items-stretch md:items-center justify-center md:p-4">
       <div className="bg-gray-50 w-full md:max-w-6xl md:h-[92vh] flex flex-col md:rounded-3xl overflow-hidden shadow-2xl">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 bg-white border-b border-gray-100 flex-shrink-0">
