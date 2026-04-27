@@ -147,7 +147,10 @@ function NewGoalModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: 
               <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className={inputCls} />
             </div>
           </div>
-          <button onClick={() => create.mutate({ type: type as any, period: period as any, targetValue: parseFloat(targetValue), description, startDate, endDate, targetUserId: targetUserId || undefined })}
+          {create.error && (
+            <p className="text-red-500 text-sm bg-red-50 px-3 py-2 rounded-xl">{create.error.message}</p>
+          )}
+          <button onClick={() => create.mutate({ type: type as any, period: period as any, targetValue: parseFloat(targetValue), description: description || undefined, startDate, endDate, targetUserId: targetUserId || undefined })}
             disabled={!targetValue || !startDate || !endDate || create.isPending}
             className="w-full py-3 bg-mk-pink text-white font-semibold rounded-xl disabled:opacity-60 hover:bg-pink-700 transition-colors">
             {create.isPending ? "Guardando..." : "Crear meta"}
