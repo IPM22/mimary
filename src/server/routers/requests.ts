@@ -47,6 +47,22 @@ export const requestsRouter = router({
       return { requests, total, pages: Math.ceil(total / limit) };
     }),
 
+  pendingCount: protectedProcedure.query(async ({ ctx }) => {
+    let consultantFilter: string | { in: string[] };
+    if (ctx.user.role === "DIRECTORA") {
+      const consultoras = await ctx.prisma.user.findMany({
+        where: { parentId: ctx.user.id },
+        select: { id: true },
+      });
+      consultantFilter = { in: [ctx.user.id, ...consultoras.map((c) => c.id)] };
+    } else {
+      consultantFilter = ctx.user.id;
+    }
+    return ctx.prisma.productRequest.count({
+      where: { consultantId: consultantFilter, status: "PENDING" },
+    });
+  }),
+
   updateStatus: protectedProcedure
     .input(
       z.object({

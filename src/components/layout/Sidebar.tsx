@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
 import {
   LayoutDashboard, Package, BoxesIcon, Users, ShoppingCart,
   CalendarCheck, Target, UserCog, LogOut, ChevronLeft, ChevronRight,
-  CircleUserRound, ShieldCheck,
+  CircleUserRound, ShieldCheck, Inbox,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -19,6 +19,7 @@ const navItems = [
   { href: "/inventario",   label: "Inventario",   icon: BoxesIcon,       roles: ["ADMIN","DIRECTORA","CONSULTORA"] },
   { href: "/clientes",     label: "Clientes",     icon: Users,           roles: ["ADMIN","DIRECTORA","CONSULTORA"] },
   { href: "/ventas",       label: "Ventas",       icon: ShoppingCart,    roles: ["ADMIN","DIRECTORA","CONSULTORA"] },
+  { href: "/solicitudes",  label: "Solicitudes",  icon: Inbox,           roles: ["ADMIN","DIRECTORA","CONSULTORA"], badge: true },
   { href: "/seguimientos", label: "Seguimientos", icon: CalendarCheck,   roles: ["ADMIN","DIRECTORA","CONSULTORA"] },
   { href: "/metas",        label: "Metas",        icon: Target,          roles: ["ADMIN","DIRECTORA","CONSULTORA"] },
   { href: "/consultoras",  label: "Consultoras",  icon: UserCog,         roles: ["ADMIN","DIRECTORA"] },
@@ -30,6 +31,7 @@ export function Sidebar() {
   const router = useRouter();
   const [collapsed, setCollapsed] = useState(false);
   const { data: user } = trpc.auth.me.useQuery(undefined, { staleTime: 5 * 60 * 1000 });
+  const { data: pendingRequests } = trpc.requests.pendingCount.useQuery(undefined, { staleTime: 60_000 });
   const role = user?.role ?? "CONSULTORA";
   const visible = navItems.filter((item) => item.roles.includes(role));
 
@@ -78,9 +80,21 @@ export function Sidebar() {
                     active ? "bg-pink-50 text-mk-pink" : "text-gray-500 hover:bg-gray-50 hover:text-gray-800",
                     collapsed && "justify-center px-0"
                   )}>
-                  <item.icon size={18} className={cn("flex-shrink-0 transition-colors", active ? "text-mk-pink" : "text-gray-400")} />
+                  <div className="relative flex-shrink-0">
+                    <item.icon size={18} className={cn("transition-colors", active ? "text-mk-pink" : "text-gray-400")} />
+                    {item.badge && (pendingRequests ?? 0) > 0 && collapsed && (
+                      <span className="absolute -top-1 -right-1 w-2 h-2 bg-mk-pink rounded-full" />
+                    )}
+                  </div>
                   {!collapsed && <span className="truncate">{item.label}</span>}
-                  {active && !collapsed && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-mk-pink flex-shrink-0" />}
+                  {!collapsed && item.badge && (pendingRequests ?? 0) > 0 && (
+                    <span className="ml-auto bg-mk-pink text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none flex-shrink-0">
+                      {pendingRequests}
+                    </span>
+                  )}
+                  {active && !collapsed && !(item.badge && (pendingRequests ?? 0) > 0) && (
+                    <span className="ml-auto w-1.5 h-1.5 rounded-full bg-mk-pink flex-shrink-0" />
+                  )}
                 </Link>
               </li>
             );
