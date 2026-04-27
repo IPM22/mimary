@@ -44,12 +44,14 @@ export const goalsRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
+      const endDate = new Date(input.endDate);
+      endDate.setHours(23, 59, 59, 999);
       return ctx.prisma.goal.create({
         data: {
           ...input,
           directoraId: ctx.user.id,
           startDate: new Date(input.startDate),
-          endDate: new Date(input.endDate),
+          endDate,
         },
       });
     }),

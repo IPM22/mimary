@@ -40,7 +40,9 @@ function GoalCard({ item }: { item: { goal: any; current: number; target: number
   const pct = Math.min(100, Math.round(percentage));
   const isAmount = goal.type === "SALES_AMOUNT" || goal.type === "GROUP_SALES";
   const completed = pct >= 100;
-  const expired = new Date(goal.endDate) < new Date();
+  const endOfDay = new Date(goal.endDate);
+  endOfDay.setHours(23, 59, 59, 999);
+  const expired = endOfDay < new Date();
   const barColor = completed ? "#22c55e" : expired ? "#9ca3af" : pct >= 60 ? "#E91E8C" : "#f59e0b";
 
   return (
