@@ -4,7 +4,7 @@ import { useState } from "react";
 import { trpc } from "@/lib/trpc/client";
 import {
   Inbox, Phone, MessageSquare, ChevronLeft, ChevronRight,
-  CheckCircle, ShoppingCart, X, Clock, User,
+  CheckCircle, X, Clock, User, ShoppingCart, Minus, Plus,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { es } from "date-fns/locale";
@@ -25,6 +25,22 @@ const STATUS_COLOR: Record<Status, string> = {
   DISMISSED: "bg-gray-100 text-gray-500 border-gray-200",
 };
 
+const PAYMENT_LABELS: Record<string, string> = {
+  CASH: "Efectivo", TRANSFER: "Transferencia", CARD: "Tarjeta", CREDIT: "Crédito",
+};
+
+type RequestItem = {
+  id: string;
+  productId: string;
+  clientName: string;
+  clientPhone: string | null;
+  message: string | null;
+  status: string;
+  createdAt: Date;
+  product: { id: string; name: string; images: string[] };
+  consultant: { id: string; name: string };
+};
+
 function waLink(phone: string, productName: string, clientName: string) {
   const digits = phone.replace(/\D/g, "");
   const e164 = /^(809|829|849)/.test(digits) ? "1" + digits : digits;
@@ -38,9 +54,188 @@ const WaIcon = () => (
   </svg>
 );
 
+// ── Modal: Registrar venta ─────────────────────────────────────────────────────
+
+function RegisterSaleModal({
+  request,
+  onClose,
+  onSuccess,
+}: {
+  request: RequestItem;
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const [quantity, setQuantity] = useState(1);
+  const [unitPrice, setUnitPrice] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState<"CASH" | "TRANSFER" | "CARD" | "CREDIT">("CASH");
+  const [notes, setNotes] = useState("");
+
+  const createSale = trpc.sales.create.useMutation();
+  const updateStatus = trpc.requests.updateStatus.useMutation();
+
+  const total = unitPrice ? quantity * parseFloat(unitPrice) : 0;
+  const canSubmit = unitPrice && parseFloat(unitPrice) > 0 && quantity >= 1 && !createSale.isPending;
+
+  const handleSubmit = () => {
+    createSale.mutate(
+      {
+        clientName: request.clientName,
+        paymentMethod,
+        notes: notes || undefined,
+        requestId: request.id,
+        items: [{ productId: request.productId, quantity, unitPrice: parseFloat(unitPrice), discount: 0 }],
+      },
+      {
+        onSuccess: () => {
+          updateStatus.mutate({ id: request.id, status: "SOLD" });
+          onSuccess();
+          onClose();
+        },
+      }
+    );
+  };
+
+  const inputCls = "mt-1 w-full px-3 py-2.5 border-2 border-gray-100 rounded-xl text-sm focus:outline-none focus:border-mk-pink/50 transition-colors bg-gray-50 focus:bg-white";
+
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center z-[60] p-0 sm:p-4">
+      <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full sm:max-w-md shadow-2xl max-h-[90vh] overflow-y-auto">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-gray-100">
+          <div>
+            <p className="text-xs font-semibold text-mk-pink uppercase tracking-widest">Solicitud</p>
+            <h2 className="text-lg font-bold text-gray-900">Registrar venta</h2>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100">
+            <X size={16} className="text-gray-500" />
+          </button>
+        </div>
+
+        <div className="px-6 py-5 space-y-5">
+          {/* Producto + cliente (solo lectura) */}
+          <div className="bg-gray-50 rounded-2xl p-4 flex gap-3">
+            <div className="w-14 h-14 rounded-xl overflow-hidden bg-white flex-shrink-0">
+              {request.product.images[0] ? (
+                <img src={request.product.images[0]} alt={request.product.name} className="w-full h-full object-cover" />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-gray-200 text-xl">📦</div>
+              )}
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-bold text-gray-900 leading-tight">{request.product.name}</p>
+              <p className="text-xs text-gray-500 mt-0.5 flex items-center gap-1">
+                <User size={11} /> {request.clientName}
+                {request.clientPhone && ` · ${request.clientPhone}`}
+              </p>
+            </div>
+          </div>
+
+          {/* Cantidad */}
+          <div>
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Cantidad</p>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setQuantity((q) => Math.max(1, q - 1))}
+                className="w-9 h-9 rounded-xl border-2 border-gray-100 flex items-center justify-center hover:bg-gray-50 transition-colors"
+              >
+                <Minus size={14} />
+              </button>
+              <span className="text-xl font-bold text-gray-900 w-8 text-center">{quantity}</span>
+              <button
+                onClick={() => setQuantity((q) => q + 1)}
+                className="w-9 h-9 rounded-xl border-2 border-gray-100 flex items-center justify-center hover:bg-gray-50 transition-colors"
+              >
+                <Plus size={14} />
+              </button>
+            </div>
+          </div>
+
+          {/* Precio unitario */}
+          <div>
+            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Precio unitario *</label>
+            <div className="relative mt-1">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400 font-medium">RD$</span>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={unitPrice}
+                onChange={(e) => setUnitPrice(e.target.value)}
+                placeholder="0.00"
+                className="w-full pl-10 pr-3 py-2.5 border-2 border-gray-100 rounded-xl text-sm focus:outline-none focus:border-mk-pink/50 transition-colors bg-gray-50 focus:bg-white"
+              />
+            </div>
+            {total > 0 && (
+              <p className="text-xs text-gray-400 mt-1">
+                Total: <span className="font-bold text-mk-pink">RD${total.toLocaleString("es-DO", { minimumFractionDigits: 2 })}</span>
+              </p>
+            )}
+          </div>
+
+          {/* Método de pago */}
+          <div>
+            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Método de pago</label>
+            <div className="grid grid-cols-2 gap-2 mt-2">
+              {(["CASH", "TRANSFER", "CARD", "CREDIT"] as const).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => setPaymentMethod(m)}
+                  className={`py-2.5 rounded-xl text-xs font-semibold border-2 transition-all
+                    ${paymentMethod === m
+                      ? "border-mk-pink bg-pink-50 text-mk-pink"
+                      : "border-gray-100 text-gray-500 hover:border-gray-200"}`}
+                >
+                  {PAYMENT_LABELS[m]}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Notas */}
+          <div>
+            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Notas (opcional)</label>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              rows={2}
+              placeholder="Observaciones sobre la venta..."
+              className={`${inputCls} resize-none`}
+            />
+          </div>
+
+          {createSale.error && (
+            <p className="text-red-500 text-sm bg-red-50 px-3 py-2 rounded-xl">{createSale.error.message}</p>
+          )}
+
+          {/* Botones */}
+          <div className="flex gap-2 pb-1">
+            <button
+              onClick={onClose}
+              className="flex-1 py-3 border-2 border-gray-100 text-gray-600 font-semibold rounded-2xl text-sm hover:bg-gray-50 transition-colors"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={handleSubmit}
+              disabled={!canSubmit}
+              className="flex-1 py-3 mk-gradient text-white font-bold rounded-2xl text-sm disabled:opacity-60 hover:opacity-90 transition-opacity"
+            >
+              {createSale.isPending ? "Registrando..." : "Registrar venta"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Página principal ───────────────────────────────────────────────────────────
+
 export default function SolicitudesPage() {
   const [statusFilter, setStatusFilter] = useState<Status | undefined>("PENDING");
   const [page, setPage] = useState(1);
+  const [saleTarget, setSaleTarget] = useState<RequestItem | null>(null);
   const utils = trpc.useUtils();
 
   const { data, isLoading } = trpc.requests.list.useQuery(
@@ -65,7 +260,7 @@ export default function SolicitudesPage() {
   ];
 
   return (
-    <div className="min-h-full p-4 md:p-8 max-w-6xl mx-auto space-y-5 pb-24 md:pb-8">
+    <div className="min-h-full p-4 md:p-8 space-y-5 pb-24 md:pb-8">
       {/* Header */}
       <div className="pt-1 flex items-start justify-between">
         <div>
@@ -98,8 +293,8 @@ export default function SolicitudesPage() {
 
       {/* Lista */}
       {isLoading ? (
-        <div className="space-y-3">
-          {[...Array(4)].map((_, i) => (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+          {[...Array(6)].map((_, i) => (
             <div key={i} className="h-36 bg-white rounded-2xl border border-gray-100 animate-pulse" />
           ))}
         </div>
@@ -111,7 +306,7 @@ export default function SolicitudesPage() {
           </p>
         </div>
       ) : (
-        <div className="space-y-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
           {data?.requests.map((req) => (
             <div key={req.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
               <div className="p-4 flex gap-4">
@@ -163,9 +358,7 @@ export default function SolicitudesPage() {
                   <div className="flex items-center gap-2 mt-2 text-xs text-gray-400">
                     <Clock size={11} />
                     {formatDistanceToNow(new Date(req.createdAt), { addSuffix: true, locale: es })}
-                    {req.consultant.name && (
-                      <span className="text-gray-300">·</span>
-                    )}
+                    {req.consultant.name && <span className="text-gray-300">·</span>}
                     <span className="truncate">{req.consultant.name}</span>
                   </div>
                 </div>
@@ -180,9 +373,15 @@ export default function SolicitudesPage() {
                       disabled={updateStatus.isPending}
                       className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-600 border border-blue-200 text-xs font-semibold rounded-xl hover:bg-blue-100 transition-colors disabled:opacity-60"
                     >
-                      <Phone size={12} /> Marcar contactado
+                      <Phone size={12} /> Contactado
                     </button>
                   )}
+                  <button
+                    onClick={() => setSaleTarget(req as unknown as RequestItem)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 mk-gradient text-white text-xs font-semibold rounded-xl hover:opacity-90 transition-opacity shadow-sm shadow-pink-200"
+                  >
+                    <ShoppingCart size={12} /> Registrar venta
+                  </button>
                   <button
                     onClick={() => updateStatus.mutate({ id: req.id, status: "SOLD" })}
                     disabled={updateStatus.isPending}
@@ -219,6 +418,19 @@ export default function SolicitudesPage() {
             </button>
           </div>
         </div>
+      )}
+
+      {/* Modal registrar venta */}
+      {saleTarget && (
+        <RegisterSaleModal
+          request={saleTarget}
+          onClose={() => setSaleTarget(null)}
+          onSuccess={() => {
+            utils.requests.list.invalidate();
+            utils.requests.pendingCount.invalidate();
+            setSaleTarget(null);
+          }}
+        />
       )}
     </div>
   );
