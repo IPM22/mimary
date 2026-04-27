@@ -70,11 +70,13 @@ function RegisterSaleModal({
   const [paymentMethod, setPaymentMethod] = useState<"CASH" | "TRANSFER" | "CARD" | "CREDIT">("CASH");
   const [notes, setNotes] = useState("");
 
+  const [done, setDone] = useState(false);
   const createSale = trpc.sales.create.useMutation();
   const updateStatus = trpc.requests.updateStatus.useMutation();
 
   const total = unitPrice ? quantity * parseFloat(unitPrice) : 0;
-  const canSubmit = unitPrice && parseFloat(unitPrice) > 0 && quantity >= 1 && !createSale.isPending;
+  const isBusy = createSale.isPending || updateStatus.isPending;
+  const canSubmit = unitPrice && parseFloat(unitPrice) > 0 && quantity >= 1 && !isBusy;
 
   const handleSubmit = () => {
     createSale.mutate(
@@ -87,15 +89,41 @@ function RegisterSaleModal({
       },
       {
         onSuccess: () => {
-          updateStatus.mutate({ id: request.id, status: "SOLD" });
-          onSuccess();
-          onClose();
+          updateStatus.mutate(
+            { id: request.id, status: "SOLD" },
+            {
+              onSuccess: () => {
+                setDone(true);
+                onSuccess();
+              },
+            }
+          );
         },
       }
     );
   };
 
   const inputCls = "mt-1 w-full px-3 py-2.5 border-2 border-gray-100 rounded-xl text-sm focus:outline-none focus:border-mk-pink/50 transition-colors bg-gray-50 focus:bg-white";
+
+  if (done) {
+    return (
+      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center z-[60] p-0 sm:p-4">
+        <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full sm:max-w-md shadow-2xl p-8 text-center">
+          <div className="w-16 h-16 rounded-full bg-emerald-50 flex items-center justify-center mx-auto mb-4">
+            <CheckCircle size={32} className="text-emerald-500" />
+          </div>
+          <h2 className="text-xl font-bold text-gray-900 mb-1">¡Venta registrada!</h2>
+          <p className="text-sm text-gray-500 mb-2">
+            {request.product.name} · <span className="font-semibold text-gray-700">RD${total.toLocaleString("es-DO", { minimumFractionDigits: 2 })}</span>
+          </p>
+          <p className="text-xs text-gray-400 mb-6">La solicitud fue marcada como vendida y se creó un seguimiento post-venta automático.</p>
+          <button onClick={onClose} className="w-full py-3 mk-gradient text-white font-bold rounded-2xl text-sm">
+            Cerrar
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center z-[60] p-0 sm:p-4">
@@ -204,15 +232,18 @@ function RegisterSaleModal({
             />
           </div>
 
-          {createSale.error && (
-            <p className="text-red-500 text-sm bg-red-50 px-3 py-2 rounded-xl">{createSale.error.message}</p>
+          {(createSale.error || updateStatus.error) && (
+            <p className="text-red-500 text-sm bg-red-50 px-3 py-2 rounded-xl">
+              {createSale.error?.message ?? updateStatus.error?.message}
+            </p>
           )}
 
           {/* Botones */}
           <div className="flex gap-2 pb-1">
             <button
               onClick={onClose}
-              className="flex-1 py-3 border-2 border-gray-100 text-gray-600 font-semibold rounded-2xl text-sm hover:bg-gray-50 transition-colors"
+              disabled={isBusy}
+              className="flex-1 py-3 border-2 border-gray-100 text-gray-600 font-semibold rounded-2xl text-sm hover:bg-gray-50 transition-colors disabled:opacity-40"
             >
               Cancelar
             </button>
@@ -221,7 +252,7 @@ function RegisterSaleModal({
               disabled={!canSubmit}
               className="flex-1 py-3 mk-gradient text-white font-bold rounded-2xl text-sm disabled:opacity-60 hover:opacity-90 transition-opacity"
             >
-              {createSale.isPending ? "Registrando..." : "Registrar venta"}
+              {createSale.isPending ? "Guardando venta..." : updateStatus.isPending ? "Actualizando..." : "Registrar venta"}
             </button>
           </div>
         </div>
