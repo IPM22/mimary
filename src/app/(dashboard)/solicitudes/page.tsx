@@ -6,6 +6,7 @@ import {
   Inbox, Phone, MessageSquare, ChevronLeft, ChevronRight,
   CheckCircle, X, Clock, User, ShoppingCart, Minus, Plus, UserPlus,
 } from "lucide-react";
+import { ClientFormModal } from "@/components/clients/ClientFormModal";
 import { formatDistanceToNow } from "date-fns";
 import { es } from "date-fns/locale";
 
@@ -262,98 +263,6 @@ function RegisterSaleModal({
   );
 }
 
-// ── Modal: Crear cliente ───────────────────────────────────────────────────────
-
-function CreateClientModal({
-  request,
-  onClose,
-}: {
-  request: RequestItem;
-  onClose: () => void;
-}) {
-  const [name, setName] = useState(request.clientName);
-  const [phone, setPhone] = useState(request.clientPhone ?? "");
-  const [email, setEmail] = useState("");
-  const [notes, setNotes] = useState("");
-  const [done, setDone] = useState(false);
-
-  const createClient = trpc.clients.create.useMutation();
-
-  const handleSubmit = () => {
-    createClient.mutate(
-      { name, phone: phone || undefined, email: email || undefined, notes: notes || undefined, source: "Solicitud pública", tags: [] },
-      { onSuccess: () => setDone(true) }
-    );
-  };
-
-  const inputCls = "mt-1 w-full px-3 py-2.5 border-2 border-gray-100 rounded-xl text-sm focus:outline-none focus:border-mk-pink/50 transition-colors bg-gray-50 focus:bg-white";
-
-  if (done) {
-    return (
-      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center z-[60] p-0 sm:p-4">
-        <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full sm:max-w-md shadow-2xl p-8 text-center">
-          <div className="w-16 h-16 rounded-full bg-emerald-50 flex items-center justify-center mx-auto mb-4">
-            <CheckCircle size={32} className="text-emerald-500" />
-          </div>
-          <h2 className="text-xl font-bold text-gray-900 mb-1">¡Cliente creado!</h2>
-          <p className="text-sm text-gray-500 mb-6">{name} fue agregado a tu lista de clientes.</p>
-          <button onClick={onClose} className="w-full py-3 mk-gradient text-white font-bold rounded-2xl text-sm">
-            Cerrar
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center z-[60] p-0 sm:p-4">
-      <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full sm:max-w-md shadow-2xl max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-gray-100">
-          <div>
-            <p className="text-xs font-semibold text-mk-pink uppercase tracking-widest">Solicitud</p>
-            <h2 className="text-lg font-bold text-gray-900">Crear cliente</h2>
-          </div>
-          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100">
-            <X size={16} className="text-gray-500" />
-          </button>
-        </div>
-
-        <div className="px-6 py-5 space-y-4">
-          <div>
-            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Nombre *</label>
-            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Nombre completo" className={inputCls} />
-          </div>
-          <div>
-            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Teléfono</label>
-            <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="809-000-0000" className={inputCls} />
-          </div>
-          <div>
-            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Correo electrónico</label>
-            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="correo@ejemplo.com" className={inputCls} />
-          </div>
-          <div>
-            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Notas (opcional)</label>
-            <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} placeholder="Observaciones sobre el cliente..." className={`${inputCls} resize-none`} />
-          </div>
-
-          {createClient.error && (
-            <p className="text-red-500 text-sm bg-red-50 px-3 py-2 rounded-xl">{createClient.error.message}</p>
-          )}
-
-          <div className="flex gap-2 pb-1">
-            <button onClick={onClose} disabled={createClient.isPending} className="flex-1 py-3 border-2 border-gray-100 text-gray-600 font-semibold rounded-2xl text-sm hover:bg-gray-50 transition-colors disabled:opacity-40">
-              Cancelar
-            </button>
-            <button onClick={handleSubmit} disabled={!name.trim() || createClient.isPending} className="flex-1 py-3 mk-gradient text-white font-bold rounded-2xl text-sm disabled:opacity-60 hover:opacity-90 transition-opacity">
-              {createClient.isPending ? "Guardando..." : "Crear cliente"}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ── Página principal ───────────────────────────────────────────────────────────
 
 export default function SolicitudesPage() {
@@ -495,24 +404,36 @@ export default function SolicitudesPage() {
               </div>
 
               {/* Acciones */}
-              <div className="px-4 py-3 border-t border-gray-50 flex items-center gap-2 flex-wrap">
+              <div className="px-4 py-3 border-t border-gray-50 space-y-2">
+                {/* Fila principal */}
                 {req.status !== "SOLD" && req.status !== "DISMISSED" && (
-                  <>
+                  <div className="flex gap-2">
                     {req.status === "PENDING" && (
                       <button
                         onClick={() => updateStatus.mutate({ id: req.id, status: "CONTACTED" })}
                         disabled={updateStatus.isPending}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-600 border border-blue-200 text-xs font-semibold rounded-xl hover:bg-blue-100 transition-colors disabled:opacity-60"
+                        className="flex items-center gap-1.5 px-3 py-2 bg-blue-50 text-blue-600 border border-blue-200 text-xs font-semibold rounded-xl hover:bg-blue-100 transition-colors disabled:opacity-60"
                       >
                         <Phone size={12} /> Contactado
                       </button>
                     )}
                     <button
                       onClick={() => setSaleTarget(req as unknown as RequestItem)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 mk-gradient text-white text-xs font-semibold rounded-xl hover:opacity-90 transition-opacity shadow-sm shadow-pink-200"
+                      className="flex items-center gap-1.5 px-3 py-2 mk-gradient text-white text-xs font-semibold rounded-xl hover:opacity-90 transition-opacity shadow-sm shadow-pink-200"
                     >
                       <ShoppingCart size={12} /> Registrar venta
                     </button>
+                    <button
+                      onClick={() => setClientTarget(req as unknown as RequestItem)}
+                      className="flex items-center gap-1.5 px-3 py-2 bg-purple-50 text-purple-600 border border-purple-200 text-xs font-semibold rounded-xl hover:bg-purple-100 transition-colors"
+                    >
+                      <UserPlus size={12} /> Crear cliente
+                    </button>
+                  </div>
+                )}
+                {/* Fila secundaria */}
+                <div className="flex gap-2">
+                  {req.status !== "SOLD" && req.status !== "DISMISSED" && (
                     <button
                       onClick={() => updateStatus.mutate({ id: req.id, status: "SOLD" })}
                       disabled={updateStatus.isPending}
@@ -520,21 +441,25 @@ export default function SolicitudesPage() {
                     >
                       <CheckCircle size={12} /> Marcar vendido
                     </button>
+                  )}
+                  {req.status !== "SOLD" && req.status !== "DISMISSED" && (
                     <button
                       onClick={() => updateStatus.mutate({ id: req.id, status: "DISMISSED" })}
                       disabled={updateStatus.isPending}
-                      className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-50 text-gray-500 border border-gray-200 text-xs font-semibold rounded-xl hover:bg-gray-100 transition-colors disabled:opacity-60 ml-auto"
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-gray-400 text-xs font-semibold rounded-xl hover:text-red-500 hover:bg-red-50 transition-colors disabled:opacity-60"
                     >
                       <X size={12} /> Descartar
                     </button>
-                  </>
-                )}
-                <button
-                  onClick={() => setClientTarget(req as unknown as RequestItem)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-50 text-purple-600 border border-purple-200 text-xs font-semibold rounded-xl hover:bg-purple-100 transition-colors"
-                >
-                  <UserPlus size={12} /> Crear cliente
-                </button>
+                  )}
+                  {(req.status === "SOLD" || req.status === "DISMISSED") && (
+                    <button
+                      onClick={() => setClientTarget(req as unknown as RequestItem)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-50 text-purple-600 border border-purple-200 text-xs font-semibold rounded-xl hover:bg-purple-100 transition-colors"
+                    >
+                      <UserPlus size={12} /> Crear cliente
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           ))}
@@ -573,9 +498,14 @@ export default function SolicitudesPage() {
 
       {/* Modal crear cliente */}
       {clientTarget && (
-        <CreateClientModal
-          request={clientTarget}
+        <ClientFormModal
           onClose={() => setClientTarget(null)}
+          onSuccess={() => setClientTarget(null)}
+          defaultValues={{
+            name: clientTarget.clientName,
+            phone: clientTarget.clientPhone ?? "",
+            source: "Solicitud pública",
+          }}
         />
       )}
     </div>
