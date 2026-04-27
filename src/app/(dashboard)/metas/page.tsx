@@ -84,6 +84,7 @@ function NewGoalModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: 
   const [endDate, setEndDate] = useState("");
   const [targetUserId, setTargetUserId] = useState("");
   const { data: consultants } = trpc.consultants.list.useQuery();
+  const { data: me } = trpc.auth.me.useQuery();
   const create = trpc.goals.create.useMutation({ onSuccess: () => { onSuccess(); onClose(); } });
 
   return (
@@ -120,9 +121,10 @@ function NewGoalModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: 
             </div>
           </div>
           <div>
-            <label className={labelCls}>Para (consultora)</label>
+            <label className={labelCls}>Para</label>
             <select value={targetUserId} onChange={(e) => setTargetUserId(e.target.value)} className={inputCls}>
               <option value="">Todo el equipo</option>
+              {me && <option value={me.id}>{me.name} (yo)</option>}
               {consultants?.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </div>
