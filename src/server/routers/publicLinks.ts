@@ -62,6 +62,7 @@ export const publicLinksRouter = router({
               clientName: input.clientName,
               clientPhone: input.clientPhone ?? null,
               message: input.message ?? null,
+              quantity: item.quantity,
             },
           })
         )

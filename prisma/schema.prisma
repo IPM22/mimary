@@ -259,6 +259,7 @@ model ProductRequest {
   clientName   String
   clientPhone  String?
   message      String?       @db.Text
+  quantity     Int           @default(1)
   status       RequestStatus @default(PENDING)
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt

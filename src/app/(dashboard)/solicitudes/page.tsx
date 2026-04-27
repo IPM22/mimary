@@ -35,6 +35,7 @@ type RequestItem = {
   clientName: string;
   clientPhone: string | null;
   message: string | null;
+  quantity: number;
   status: string;
   createdAt: Date;
   product: { id: string; name: string; images: string[] };
@@ -65,7 +66,7 @@ function RegisterSaleModal({
   onClose: () => void;
   onSuccess: () => void;
 }) {
-  const [quantity, setQuantity] = useState(1);
+  const [quantity, setQuantity] = useState(request.quantity ?? 1);
   const [unitPrice, setUnitPrice] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<"CASH" | "TRANSFER" | "CARD" | "CREDIT">("CASH");
   const [notes, setNotes] = useState("");
@@ -353,7 +354,12 @@ export default function SolicitudesPage() {
                 {/* Info */}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-start justify-between gap-2 mb-1">
-                    <p className="text-sm font-bold text-gray-900 leading-tight line-clamp-2">{req.product.name}</p>
+                    <div className="min-w-0">
+                      <p className="text-sm font-bold text-gray-900 leading-tight line-clamp-2">{req.product.name}</p>
+                      {req.quantity > 1 && (
+                        <p className="text-xs text-mk-pink font-semibold mt-0.5">× {req.quantity} unidades</p>
+                      )}
+                    </div>
                     <span className={`flex-shrink-0 text-xs font-semibold px-2 py-0.5 rounded-full border ${STATUS_COLOR[req.status as Status]}`}>
                       {STATUS_LABEL[req.status as Status]}
                     </span>
