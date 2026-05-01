@@ -387,6 +387,7 @@ function NewSaleModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: 
   const [paymentMethod, setPaymentMethod] = useState<"CASH" | "TRANSFER" | "CARD" | "CREDIT">("CASH");
   const [paymentMode, setPaymentMode] = useState<"PAID" | "PENDING" | "INSTALLMENTS">("PAID");
   const [installmentCount, setInstallmentCount] = useState(2);
+  const [installmentFrequency, setInstallmentFrequency] = useState<"MONTHLY" | "BIWEEKLY">("MONTHLY");
   const [firstDueDate, setFirstDueDate] = useState("");
   const [notes, setNotes] = useState("");
   const [step, setStep] = useState<"products" | "checkout">("products");
@@ -450,7 +451,7 @@ function NewSaleModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: 
       paymentMode,
       notes: notes || undefined,
       items: cart.map((i) => ({ productId: i.productId, quantity: i.quantity, unitPrice: i.unitPrice, discount: i.discount })),
-      installmentsConfig: paymentMode === "INSTALLMENTS" ? { count: installmentCount, firstDueDate } : undefined,
+      installmentsConfig: paymentMode === "INSTALLMENTS" ? { count: installmentCount, firstDueDate, frequency: installmentFrequency } : undefined,
     });
   }
   const cartQtyMap = useMemo(() => {
@@ -636,22 +637,35 @@ function NewSaleModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: 
                   </div>
 
                   {paymentMode === "INSTALLMENTS" && (
-                    <div className="grid grid-cols-2 gap-2 mt-2">
-                      <div>
-                        <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest">Cant. cuotas</label>
-                        <input
-                          type="number" min="2" max="24" value={installmentCount}
-                          onChange={(e) => setInstallmentCount(Math.min(24, Math.max(2, parseInt(e.target.value) || 2)))}
-                          className="mt-1 w-full px-3 py-2 border-2 border-gray-200 rounded-xl text-sm bg-gray-50 focus:outline-none focus:border-mk-pink/50 font-semibold"
-                        />
+                    <div className="mt-2 space-y-2">
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {([
+                          { value: "MONTHLY" as const, label: "Mensual" },
+                          { value: "BIWEEKLY" as const, label: "Quincenal" },
+                        ]).map((f) => (
+                          <button key={f.value} type="button" onClick={() => setInstallmentFrequency(f.value)}
+                            className={`py-1.5 rounded-xl border-2 text-[11px] font-semibold transition-all ${installmentFrequency === f.value ? "border-mk-pink bg-pink-50 text-mk-pink" : "border-gray-100 text-gray-500 hover:border-gray-200"}`}>
+                            {f.label}
+                          </button>
+                        ))}
                       </div>
-                      <div>
-                        <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest">Primera cuota</label>
-                        <input
-                          type="date" value={firstDueDate}
-                          onChange={(e) => setFirstDueDate(e.target.value)}
-                          className="mt-1 w-full px-3 py-2 border-2 border-gray-200 rounded-xl text-sm bg-gray-50 focus:outline-none focus:border-mk-pink/50 text-gray-700"
-                        />
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest">Cant. cuotas</label>
+                          <input
+                            type="number" min="2" max="24" value={installmentCount}
+                            onChange={(e) => setInstallmentCount(Math.min(24, Math.max(2, parseInt(e.target.value) || 2)))}
+                            className="mt-1 w-full px-3 py-2 border-2 border-gray-200 rounded-xl text-sm bg-gray-50 focus:outline-none focus:border-mk-pink/50 font-semibold"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest">Primera cuota</label>
+                          <input
+                            type="date" value={firstDueDate}
+                            onChange={(e) => setFirstDueDate(e.target.value)}
+                            className="mt-1 w-full px-3 py-2 border-2 border-gray-200 rounded-xl text-sm bg-gray-50 focus:outline-none focus:border-mk-pink/50 text-gray-700"
+                          />
+                        </div>
                       </div>
                     </div>
                   )}

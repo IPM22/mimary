@@ -109,6 +109,7 @@ export const salesRouter = router({
           .object({
             count: z.number().int().min(2).max(24),
             firstDueDate: z.string(),
+            frequency: z.enum(["MONTHLY", "BIWEEKLY"]).default("MONTHLY"),
           })
           .optional(),
         notes: z.string().optional(),
@@ -190,13 +191,17 @@ export const salesRouter = router({
         });
 
         if (input.paymentMode === "INSTALLMENTS" && input.installmentsConfig) {
-          const { count, firstDueDate } = input.installmentsConfig;
+          const { count, firstDueDate, frequency } = input.installmentsConfig;
           const installmentAmount = total / count;
 
           for (let i = 0; i < count; i++) {
             const base = new Date(firstDueDate + "T12:00:00.000Z");
             const dueDate = new Date(base);
-            dueDate.setMonth(dueDate.getMonth() + i);
+            if (frequency === "BIWEEKLY") {
+              dueDate.setDate(dueDate.getDate() + i * 15);
+            } else {
+              dueDate.setMonth(dueDate.getMonth() + i);
+            }
 
             const installment = await tx.saleInstallment.create({
               data: {
@@ -253,10 +258,7 @@ export const salesRouter = router({
         const sale = await tx.sale.findUnique({
           where: { id: input.saleId },
           include: {
-            installments: {
-              where: { status: "PENDING" },
-              orderBy: { dueDate: "asc" },
-            },
+            installments: { orderBy: { number: "asc" } },
           },
         });
         if (!sale) throw new TRPCError({ code: "NOT_FOUND" });
@@ -274,15 +276,23 @@ export const salesRouter = router({
         });
 
         const newPaidAmount = Number(sale.paidAmount) + input.amount;
+        const saleTotal = Number(sale.total);
 
-        let remaining = input.amount;
+        // Determine which installments are now covered based on cumulative paidAmount
         const paidInstallmentIds: string[] = [];
+        let cumulative = 0;
 
         for (const inst of sale.installments) {
-          if (remaining <= 0) break;
-          if (remaining >= Number(inst.amount)) {
+          if (inst.status === "PAID") {
+            cumulative += Number(inst.amount);
+            continue;
+          }
+          cumulative += Number(inst.amount);
+          // Mark as paid if cumulative is covered (with 0.02 tolerance for rounding) or sale is fully paid
+          if (cumulative <= newPaidAmount + 0.02 || newPaidAmount >= saleTotal - 0.02) {
             paidInstallmentIds.push(inst.id);
-            remaining -= Number(inst.amount);
+          } else {
+            break;
           }
         }
 
