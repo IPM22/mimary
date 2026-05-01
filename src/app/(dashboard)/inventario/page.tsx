@@ -2,9 +2,10 @@
 
 import { useState, useRef, useEffect } from "react";
 import { trpc } from "@/lib/trpc/client";
+import { formatDate } from "@/lib/utils";
 import {
   Plus, AlertTriangle, TrendingDown, TrendingUp, Minus, X, Package,
-  Search, Check, ChevronLeft, ChevronRight,
+  Search, Check, ChevronLeft, ChevronRight, CalendarClock, Trash2,
 } from "lucide-react";
 
 const inputCls = "mt-1 w-full px-3 py-2.5 border-2 border-gray-100 rounded-xl text-sm focus:outline-none focus:border-mk-pink/50 transition-colors bg-gray-50 focus:bg-white";
@@ -23,12 +24,27 @@ function getFirstImage(images: string[]): string {
   }) ?? "";
 }
 
+function daysUntil(date: Date | string): number {
+  const d = new Date(date);
+  const now = new Date();
+  return Math.ceil((d.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+}
+
+function expiryBadgeCls(days: number) {
+  if (days <= 0) return "bg-red-100 text-red-600 border-red-200";
+  if (days <= 7) return "bg-red-50 text-red-500 border-red-100";
+  if (days <= 15) return "bg-orange-50 text-orange-600 border-orange-200";
+  return "bg-amber-50 text-amber-600 border-amber-100";
+}
+
+// ── Adjust Modal ─────────────────────────────────────────────────────────────
 function AdjustModal({ item, onClose, onSuccess }: {
   item: { id: string; name: string; quantity: number }; onClose: () => void; onSuccess: () => void;
 }) {
   const [type, setType] = useState<"IN" | "OUT" | "ADJUST">("IN");
   const [quantity, setQuantity] = useState(1);
   const [reason, setReason] = useState("");
+  const [expiresAt, setExpiresAt] = useState("");
   const adjust = trpc.inventory.adjust.useMutation({ onSuccess: () => { onSuccess(); onClose(); } });
 
   const types = [
@@ -63,12 +79,19 @@ function AdjustModal({ item, onClose, onSuccess }: {
             <label className={labelCls}>{type === "ADJUST" ? "Nueva cantidad total" : "Cantidad"}</label>
             <input type="number" min="1" value={quantity} onChange={(e) => setQuantity(parseInt(e.target.value) || 1)} className={inputCls} />
           </div>
+          {type === "IN" && (
+            <div>
+              <label className={labelCls}>Fecha de vencimiento</label>
+              <input type="date" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} className={inputCls} />
+              <p className="text-xs text-gray-400 mt-1">Opcional — para seguimiento de lotes</p>
+            </div>
+          )}
           <div>
             <label className={labelCls}>Motivo *</label>
             <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Ej: Compra de pedido, venta, pérdida..." className={inputCls} />
           </div>
         </div>
-        <button onClick={() => adjust.mutate({ inventoryItemId: item.id, type, quantity, reason })}
+        <button onClick={() => adjust.mutate({ inventoryItemId: item.id, type, quantity, reason, expiresAt: expiresAt || undefined })}
           disabled={!reason.trim() || adjust.isPending}
           className="w-full py-3 bg-mk-pink text-white font-semibold rounded-xl disabled:opacity-50 hover:bg-pink-700">
           {adjust.isPending ? "Guardando..." : "Aplicar ajuste"}
@@ -79,14 +102,16 @@ function AdjustModal({ item, onClose, onSuccess }: {
   );
 }
 
+// ── Add Product Modal ─────────────────────────────────────────────────────────
 type CatalogProduct = { id: string; name: string; images: string[]; category: string; basePrice: number | string | { toNumber: () => number } };
+type Batch = { quantity: number; expiresAt: string };
 
 function AddProductModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("");
   const [mobilePage, setMobilePage] = useState<"products" | "config">("products");
   const [selected, setSelected] = useState<CatalogProduct | null>(null);
-  const [quantity, setQuantity] = useState(1);
+  const [batches, setBatches] = useState<Batch[]>([{ quantity: 1, expiresAt: "" }]);
   const [threshold, setThreshold] = useState(2);
   const chipsRef = useRef<HTMLDivElement>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
@@ -107,6 +132,19 @@ function AddProductModal({ onClose, onSuccess }: { onClose: () => void; onSucces
     const t = setTimeout(updateChipsArrows, 80);
     return () => clearTimeout(t);
   }, [categories]);
+
+  function updateBatch(idx: number, field: keyof Batch, val: string | number) {
+    setBatches((prev) => prev.map((b, i) => i === idx ? { ...b, [field]: val } : b));
+  }
+  function addBatch() {
+    setBatches((prev) => [...prev, { quantity: 1, expiresAt: "" }]);
+  }
+  function removeBatch(idx: number) {
+    setBatches((prev) => prev.filter((_, i) => i !== idx));
+  }
+
+  const totalQty = batches.reduce((s, b) => s + (b.quantity || 0), 0);
+  const canAdd = !!selected && batches.length > 0 && batches.every((b) => b.quantity > 0 && !!b.expiresAt);
 
   const ProductsPanel = (
     <div className="flex flex-col h-full">
@@ -178,22 +216,60 @@ function AddProductModal({ onClose, onSuccess }: { onClose: () => void; onSucces
         </button>
         {selected ? (
           <div className="space-y-5">
+            {/* Product preview */}
             <div className="bg-gray-50 rounded-2xl p-3.5 flex gap-3 items-start">
-              <div className="w-16 h-16 rounded-xl overflow-hidden flex-shrink-0 bg-white border border-gray-100">
-                {(() => { const img = getFirstImage(selected.images); return img ? <img src={img} alt={selected.name} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-pink-50 to-rose-100"><span className="text-lg font-bold text-mk-pink/40">{selected.name[0]}</span></div>; })()}
+              <div className="w-14 h-14 rounded-xl overflow-hidden flex-shrink-0 bg-white border border-gray-100">
+                {(() => { const img = getFirstImage(selected.images); return img
+                  ? <img src={img} alt={selected.name} className="w-full h-full object-cover" />
+                  : <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-pink-50 to-rose-100"><span className="text-lg font-bold text-mk-pink/40">{selected.name[0]}</span></div>; })()}
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-semibold text-gray-900 leading-tight">{selected.name}</p>
                 <p className="text-xs text-gray-400 mt-0.5">{selected.category}</p>
-                {toNum(selected.basePrice) > 0 && <p className="text-xs font-bold text-mk-pink mt-1">${toNum(selected.basePrice).toFixed(2)}</p>}
               </div>
               <button onClick={() => { setSelected(null); setMobilePage("products"); }} className="text-gray-300 hover:text-gray-500 flex-shrink-0"><X size={15} /></button>
             </div>
+
+            {/* Batches */}
             <div>
-              <label className={labelCls}>Cantidad inicial</label>
-              <input type="number" min="0" value={quantity} onChange={(e) => setQuantity(parseInt(e.target.value) || 0)} className={inputCls} />
-              <p className="text-xs text-gray-400 mt-1">Unidades disponibles en este momento</p>
+              <div className="flex items-center justify-between mb-2">
+                <label className={labelCls}>Lotes con fecha de vencimiento</label>
+                {totalQty > 0 && <span className="text-xs font-bold text-mk-pink">{totalQty} unid. total</span>}
+              </div>
+              <div className="space-y-2">
+                {batches.map((batch, idx) => (
+                  <div key={idx} className="flex items-end gap-2 bg-gray-50 rounded-xl p-3 border border-gray-100">
+                    <div className="w-20 flex-shrink-0">
+                      <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest">Cant.</label>
+                      <input
+                        type="number" min="1" value={batch.quantity}
+                        onChange={(e) => updateBatch(idx, "quantity", parseInt(e.target.value) || 1)}
+                        className="mt-1 w-full px-2 py-1.5 border-2 border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:border-mk-pink/50 font-semibold text-center"
+                      />
+                    </div>
+                    <div className="flex-1">
+                      <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest">Fecha de vencimiento *</label>
+                      <input
+                        type="date" value={batch.expiresAt}
+                        onChange={(e) => updateBatch(idx, "expiresAt", e.target.value)}
+                        className="mt-1 w-full px-2 py-1.5 border-2 border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:border-mk-pink/50 text-gray-700"
+                      />
+                    </div>
+                    {batches.length > 1 && (
+                      <button onClick={() => removeBatch(idx)} className="mb-0.5 w-7 h-7 flex items-center justify-center rounded-lg text-gray-300 hover:text-red-400 hover:bg-red-50 transition-colors flex-shrink-0">
+                        <Trash2 size={13} />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <button onClick={addBatch}
+                className="mt-2 flex items-center gap-1.5 text-xs font-semibold text-mk-pink hover:text-pink-700 transition-colors">
+                <Plus size={13} /> Agregar otro lote
+              </button>
             </div>
+
+            {/* Alert threshold */}
             <div>
               <label className={labelCls}>Alerta de stock bajo</label>
               <input type="number" min="0" value={threshold} onChange={(e) => setThreshold(parseInt(e.target.value) || 0)} className={inputCls} />
@@ -211,11 +287,16 @@ function AddProductModal({ onClose, onSuccess }: { onClose: () => void; onSucces
         )}
       </div>
       {selected && (
-        <div className="flex-shrink-0 px-5 pb-5">
-          {add.error && <p className="text-red-500 text-xs text-center mb-2">{add.error.message}</p>}
-          <button onClick={() => add.mutate({ productId: selected.id, quantity, alertThreshold: threshold })} disabled={add.isPending}
+        <div className="flex-shrink-0 px-5 pb-5 space-y-2">
+          {!canAdd && batches.some((b) => !b.expiresAt) && (
+            <p className="text-xs text-amber-600 text-center">Completa la fecha de vencimiento de cada lote</p>
+          )}
+          {add.error && <p className="text-red-500 text-xs text-center">{add.error.message}</p>}
+          <button
+            onClick={() => add.mutate({ productId: selected.id, batches, alertThreshold: threshold })}
+            disabled={!canAdd || add.isPending}
             className="w-full py-3 bg-mk-pink text-white font-semibold rounded-xl disabled:opacity-50 hover:bg-pink-700 text-sm">
-            {add.isPending ? "Guardando..." : "Agregar al inventario"}
+            {add.isPending ? "Guardando..." : `Agregar al inventario · ${totalQty} unid.`}
           </button>
         </div>
       )}
@@ -236,7 +317,7 @@ function AddProductModal({ onClose, onSuccess }: { onClose: () => void; onSucces
           <div className="md:hidden h-full overflow-hidden">{mobilePage === "products" ? ProductsPanel : ConfigPanel}</div>
           <div className="hidden md:flex h-full overflow-hidden">
             <div className="flex-1 min-w-0 border-r border-gray-100 overflow-hidden">{ProductsPanel}</div>
-            <div className="w-72 flex-shrink-0 overflow-hidden">{ConfigPanel}</div>
+            <div className="w-80 flex-shrink-0 overflow-hidden">{ConfigPanel}</div>
           </div>
         </div>
       </div>
@@ -244,14 +325,19 @@ function AddProductModal({ onClose, onSuccess }: { onClose: () => void; onSucces
   );
 }
 
+// ── Main page ─────────────────────────────────────────────────────────────────
 export default function InventarioPage() {
   const [adjustItem, setAdjustItem] = useState<{ id: string; name: string; quantity: number } | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [search, setSearch] = useState("");
   const [stockFilter, setStockFilter] = useState<"" | "ok" | "low" | "out">("");
   const [alertDismissed, setAlertDismissed] = useState(false);
+  const [expiryDismissed, setExpiryDismissed] = useState(false);
   const utils = trpc.useUtils();
+
   const { data: items, isLoading } = trpc.inventory.list.useQuery({});
+  const { data: expiringBatches } = trpc.inventory.expiringBatches.useQuery({ days: 30 });
+
   const lowStock = items?.filter((i) => i.quantity <= i.alertThreshold) ?? [];
 
   const filteredItems = items?.filter((item) => {
@@ -261,6 +347,11 @@ export default function InventarioPage() {
     const matchesStock = !stockFilter || (stockFilter === "out" && isEmpty) || (stockFilter === "low" && isLow) || (stockFilter === "ok" && !isEmpty && !isLow);
     return matchesSearch && matchesStock;
   });
+
+  function onSuccess() {
+    utils.inventory.list.invalidate();
+    utils.inventory.expiringBatches.invalidate();
+  }
 
   return (
     <div className="min-h-full p-4 md:p-8 space-y-6">
@@ -276,7 +367,37 @@ export default function InventarioPage() {
         </button>
       </div>
 
-      {/* Alerta stock bajo */}
+      {/* Próximos a vencer */}
+      {(expiringBatches?.length ?? 0) > 0 && !expiryDismissed && (
+        <div className="bg-orange-50 border border-orange-200 rounded-2xl p-4">
+          <div className="flex items-center justify-between gap-2 mb-3">
+            <div className="flex items-center gap-2 text-orange-700 font-semibold text-sm">
+              <CalendarClock size={15} />{expiringBatches!.length} lote(s) próximos a vencer en los próximos 30 días
+            </div>
+            <button onClick={() => setExpiryDismissed(true)} className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-orange-100 transition-colors flex-shrink-0">
+              <X size={14} className="text-orange-400" />
+            </button>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+            {expiringBatches!.map((batch) => {
+              const days = daysUntil(batch.expiresAt);
+              return (
+                <div key={batch.id} className="flex items-center justify-between bg-white rounded-xl px-3 py-2.5 border border-orange-100 gap-2">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-gray-800 truncate">{batch.inventoryItem.product.name}</p>
+                    <p className="text-xs text-gray-400">{batch.quantity} unid. · Vence {formatDate(batch.expiresAt)}</p>
+                  </div>
+                  <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full border flex-shrink-0 ${expiryBadgeCls(days)}`}>
+                    {days <= 0 ? "Vencido" : days === 1 ? "1 día" : `${days} días`}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Stock bajo */}
       {lowStock.length > 0 && !alertDismissed && (
         <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4">
           <div className="flex items-center justify-between gap-2 mb-3">
@@ -341,7 +462,6 @@ export default function InventarioPage() {
               <div className="h-5 bg-gray-100 rounded-full w-16" />
               <div className="flex gap-2 ml-auto">
                 <div className="w-8 h-8 bg-gray-100 rounded-lg" />
-                <div className="w-8 h-8 bg-gray-100 rounded-lg" />
               </div>
             </div>
           ))}
@@ -363,7 +483,7 @@ export default function InventarioPage() {
                   <th className="text-left px-5 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Producto</th>
                   <th className="text-left px-5 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide hidden sm:table-cell">Categoría</th>
                   <th className="text-center px-5 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Stock</th>
-                  <th className="text-center px-5 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide hidden md:table-cell">Alerta</th>
+                  <th className="text-center px-5 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide hidden md:table-cell">Próx. vencimiento</th>
                   <th className="text-center px-5 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Estado</th>
                   <th className="px-5 py-3" />
                 </tr>
@@ -373,6 +493,8 @@ export default function InventarioPage() {
                   const isLow = item.quantity <= item.alertThreshold;
                   const isEmpty = item.quantity === 0;
                   const img = getFirstImage(item.product.images ?? []);
+                  const nextBatch = (item as any).batches?.[0];
+                  const daysLeft = nextBatch ? daysUntil(nextBatch.expiresAt) : null;
                   return (
                     <tr key={item.id} className="hover:bg-gray-50/50 transition-colors">
                       <td className="px-5 py-3">
@@ -392,7 +514,15 @@ export default function InventarioPage() {
                           {item.quantity}
                         </span>
                       </td>
-                      <td className="px-5 py-3 text-center text-sm text-gray-400 hidden md:table-cell">≤{item.alertThreshold}</td>
+                      <td className="px-5 py-3 text-center hidden md:table-cell">
+                        {nextBatch ? (
+                          <span className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${daysLeft !== null && daysLeft <= 30 ? expiryBadgeCls(daysLeft) : "bg-gray-50 text-gray-400 border-gray-100"}`}>
+                            {formatDate(nextBatch.expiresAt)}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-gray-300">—</span>
+                        )}
+                      </td>
                       <td className="px-5 py-3 text-center">
                         <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${isEmpty ? "bg-red-50 text-red-500 border border-red-100" : isLow ? "bg-amber-50 text-amber-600 border border-amber-100" : "bg-emerald-50 text-emerald-600 border border-emerald-100"}`}>
                           {isEmpty ? "Agotado" : isLow ? "Stock bajo" : "OK"}
@@ -413,8 +543,8 @@ export default function InventarioPage() {
         </div>
       )}
 
-      {adjustItem && <AdjustModal item={adjustItem} onClose={() => setAdjustItem(null)} onSuccess={() => utils.inventory.list.invalidate()} />}
-      {showAdd && <AddProductModal onClose={() => setShowAdd(false)} onSuccess={() => utils.inventory.list.invalidate()} />}
+      {adjustItem && <AdjustModal item={adjustItem} onClose={() => setAdjustItem(null)} onSuccess={onSuccess} />}
+      {showAdd && <AddProductModal onClose={() => setShowAdd(false)} onSuccess={onSuccess} />}
     </div>
   );
 }

@@ -2,6 +2,11 @@ import { z } from "zod";
 import { router, protectedProcedure, directoraProcedure } from "../trpc";
 import { TRPCError } from "@trpc/server";
 
+const batchSchema = z.object({
+  quantity: z.number().int().min(1),
+  expiresAt: z.string(), // YYYY-MM-DD
+});
+
 export const inventoryRouter = router({
   list: protectedProcedure
     .input(
@@ -11,8 +16,7 @@ export const inventoryRouter = router({
       })
     )
     .query(async ({ ctx, input }) => {
-            let userId: string;
-
+      let userId: string;
       if (ctx.user.role === "DIRECTORA" && input.consultantId) {
         userId = input.consultantId;
       } else {
@@ -21,7 +25,10 @@ export const inventoryRouter = router({
 
       const items = await ctx.prisma.inventoryItem.findMany({
         where: { userId },
-        include: { product: true },
+        include: {
+          product: true,
+          batches: { orderBy: { expiresAt: "asc" } },
+        },
         orderBy: { product: { name: "asc" } },
       });
 
@@ -32,8 +39,28 @@ export const inventoryRouter = router({
       return items;
     }),
 
+  expiringBatches: protectedProcedure
+    .input(z.object({ days: z.number().int().min(1).default(30) }))
+    .query(async ({ ctx, input }) => {
+      const now = new Date();
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() + input.days);
+
+      return ctx.prisma.inventoryBatch.findMany({
+        where: {
+          inventoryItem: { userId: ctx.user.id },
+          expiresAt: { gte: now, lte: cutoff },
+          quantity: { gt: 0 },
+        },
+        include: {
+          inventoryItem: { include: { product: true } },
+        },
+        orderBy: { expiresAt: "asc" },
+      });
+    }),
+
   consolidado: directoraProcedure.query(async ({ ctx }) => {
-        const consultoras = await ctx.prisma.user.findMany({
+    const consultoras = await ctx.prisma.user.findMany({
       where: { parentId: ctx.user.id, active: true },
       select: { id: true, name: true },
     });
@@ -55,57 +82,71 @@ export const inventoryRouter = router({
     .input(
       z.object({
         productId: z.string(),
-        quantity: z.number().int().min(0),
+        batches: z.array(batchSchema).min(1),
         alertThreshold: z.number().int().min(0).default(2),
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const existing = await ctx.prisma.inventoryItem.findUnique({
-        where: {
-          userId_productId: {
+      const totalQty = input.batches.reduce((sum, b) => sum + b.quantity, 0);
+
+      return ctx.prisma.$transaction(async (tx) => {
+        const existing = await tx.inventoryItem.findUnique({
+          where: { userId_productId: { userId: ctx.user.id, productId: input.productId } },
+        });
+
+        if (existing) {
+          await tx.inventoryItem.update({
+            where: { id: existing.id },
+            data: { quantity: existing.quantity + totalQty },
+          });
+          await tx.inventoryBatch.createMany({
+            data: input.batches.map((b) => ({
+              inventoryItemId: existing.id,
+              quantity: b.quantity,
+              expiresAt: new Date(b.expiresAt + "T12:00:00.000Z"),
+            })),
+          });
+          await tx.inventoryMovement.create({
+            data: {
+              inventoryItemId: existing.id,
+              type: "IN",
+              quantity: totalQty,
+              reason: "Entrada de mercancía",
+            },
+          });
+          return existing;
+        }
+
+        const item = await tx.inventoryItem.create({
+          data: {
             userId: ctx.user.id,
             productId: input.productId,
-          },
-        },
-      });
-
-      if (existing) {
-        const updated = await ctx.prisma.inventoryItem.update({
-          where: { id: existing.id },
-          data: { quantity: existing.quantity + input.quantity },
-        });
-        await ctx.prisma.inventoryMovement.create({
-          data: {
-            inventoryItemId: existing.id,
-            type: "IN",
-            quantity: input.quantity,
-            reason: "Entrada de mercancía",
+            quantity: totalQty,
+            alertThreshold: input.alertThreshold,
           },
         });
-        return updated;
-      }
 
-      const item = await ctx.prisma.inventoryItem.create({
-        data: {
-          userId: ctx.user.id,
-          productId: input.productId,
-          quantity: input.quantity,
-          alertThreshold: input.alertThreshold,
-        },
-      });
-
-      if (input.quantity > 0) {
-        await ctx.prisma.inventoryMovement.create({
-          data: {
+        await tx.inventoryBatch.createMany({
+          data: input.batches.map((b) => ({
             inventoryItemId: item.id,
-            type: "IN",
-            quantity: input.quantity,
-            reason: "Stock inicial",
-          },
+            quantity: b.quantity,
+            expiresAt: new Date(b.expiresAt + "T12:00:00.000Z"),
+          })),
         });
-      }
 
-      return item;
+        if (totalQty > 0) {
+          await tx.inventoryMovement.create({
+            data: {
+              inventoryItemId: item.id,
+              type: "IN",
+              quantity: totalQty,
+              reason: "Stock inicial",
+            },
+          });
+        }
+
+        return item;
+      });
     }),
 
   adjust: protectedProcedure
@@ -115,6 +156,7 @@ export const inventoryRouter = router({
         type: z.enum(["IN", "OUT", "ADJUST"]),
         quantity: z.number().int().min(1),
         reason: z.string().min(2),
+        expiresAt: z.string().optional(), // only for IN
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -122,33 +164,39 @@ export const inventoryRouter = router({
         where: { id: input.inventoryItemId },
       });
       if (!item) throw new TRPCError({ code: "NOT_FOUND" });
-      if (item.userId !== ctx.user.id) {
-        throw new TRPCError({ code: "FORBIDDEN" });
-      }
+      if (item.userId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN" });
 
       let newQty = item.quantity;
       if (input.type === "IN") newQty += input.quantity;
       else if (input.type === "OUT") newQty -= input.quantity;
-      else newQty = input.quantity; // ADJUST = set absolute value
+      else newQty = input.quantity;
 
       if (newQty < 0) throw new TRPCError({ code: "BAD_REQUEST", message: "Stock insuficiente" });
 
-      const [updated] = await ctx.prisma.$transaction([
-        ctx.prisma.inventoryItem.update({
+      return ctx.prisma.$transaction(async (tx) => {
+        const updated = await tx.inventoryItem.update({
           where: { id: item.id },
           data: { quantity: newQty },
-        }),
-        ctx.prisma.inventoryMovement.create({
+        });
+        await tx.inventoryMovement.create({
           data: {
             inventoryItemId: item.id,
             type: input.type,
             quantity: input.quantity,
             reason: input.reason,
           },
-        }),
-      ]);
-
-      return updated;
+        });
+        if (input.type === "IN" && input.expiresAt) {
+          await tx.inventoryBatch.create({
+            data: {
+              inventoryItemId: item.id,
+              quantity: input.quantity,
+              expiresAt: new Date(input.expiresAt + "T12:00:00.000Z"),
+            },
+          });
+        }
+        return updated;
+      });
     }),
 
   movements: protectedProcedure

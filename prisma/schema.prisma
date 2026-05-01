@@ -135,9 +135,23 @@ model InventoryItem {
   user      User                @relation(fields: [userId], references: [id], onDelete: Cascade)
   product   Product             @relation(fields: [productId], references: [id], onDelete: Cascade)
   movements InventoryMovement[]
+  batches   InventoryBatch[]
 
   @@unique([userId, productId])
   @@index([userId])
+}
+
+model InventoryBatch {
+  id              String        @id @default(cuid())
+  inventoryItemId String
+  quantity        Int
+  expiresAt       DateTime
+  createdAt       DateTime      @default(now())
+
+  inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+
+  @@index([inventoryItemId])
+  @@index([expiresAt])
 }
 
 enum MovementType {
