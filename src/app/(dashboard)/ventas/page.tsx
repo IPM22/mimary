@@ -196,7 +196,7 @@ function AddPaymentForm({ saleId, remaining, onSuccess }: { saleId: string; rema
       </div>
       <button
         onClick={() => addPayment.mutate({ saleId, amount: parseFloat(amount) || 0, paymentMethod: method, note: note || undefined })}
-        disabled={addPayment.isPending || !parseFloat(amount)}
+        disabled={addPayment.isPending || !parseFloat(amount) || parseFloat(amount) > remaining + 0.01}
         className="w-full py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold rounded-xl text-sm disabled:opacity-60 flex items-center justify-center gap-2">
         {addPayment.isPending ? "Registrando..." : <><Check size={14} /> Registrar abono</>}
       </button>

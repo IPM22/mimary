@@ -266,6 +266,14 @@ export const salesRouter = router({
           throw new TRPCError({ code: "FORBIDDEN" });
         }
 
+        const remainingBalance = Number(sale.total) - Number(sale.paidAmount);
+        if (input.amount > remainingBalance + 0.02) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `El abono excede el saldo pendiente de RD$${remainingBalance.toFixed(2)}`,
+          });
+        }
+
         await tx.salePayment.create({
           data: {
             saleId: input.saleId,
