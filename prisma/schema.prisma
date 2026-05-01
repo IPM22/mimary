@@ -212,6 +212,7 @@ model Sale {
   clientId      String?
   clientName    String?
   total         Decimal        @db.Decimal(10, 2)
+  paidAmount    Decimal        @default(0) @db.Decimal(10, 2)
   paymentMethod PaymentMethod  @default(CASH)
   status        SaleStatus     @default(PENDING)
   notes         String?        @db.Text
@@ -220,9 +221,11 @@ model Sale {
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
 
-  consultant User       @relation(fields: [consultantId], references: [id])
-  client     Client?    @relation(fields: [clientId], references: [id])
-  items      SaleItem[]
+  consultant   User              @relation(fields: [consultantId], references: [id])
+  client       Client?           @relation(fields: [clientId], references: [id])
+  items        SaleItem[]
+  installments SaleInstallment[]
+  payments     SalePayment[]
 
   @@index([consultantId])
   @@index([createdAt])
@@ -294,6 +297,7 @@ enum FollowUpType {
   DELIVERY
   POST_SALE
   BIRTHDAY
+  PAYMENT
   OTHER
 }
 
@@ -303,23 +307,60 @@ enum FollowUpStatus {
 }
 
 model FollowUp {
-  id            String         @id @default(cuid())
-  consultantId  String
-  clientId      String?
-  type          FollowUpType   @default(OTHER)
-  scheduledDate DateTime
-  note          String?        @db.Text
-  status        FollowUpStatus @default(PENDING)
-  resultNote    String?        @db.Text
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  id                String           @id @default(cuid())
+  consultantId      String
+  clientId          String?
+  type              FollowUpType     @default(OTHER)
+  scheduledDate     DateTime
+  note              String?          @db.Text
+  status            FollowUpStatus   @default(PENDING)
+  resultNote        String?          @db.Text
+  saleInstallmentId String?          @unique
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
 
-  consultant User    @relation(fields: [consultantId], references: [id])
-  client     Client? @relation(fields: [clientId], references: [id])
+  consultant      User             @relation(fields: [consultantId], references: [id])
+  client          Client?          @relation(fields: [clientId], references: [id])
+  saleInstallment SaleInstallment? @relation(fields: [saleInstallmentId], references: [id], onDelete: SetNull)
 
   @@index([consultantId])
   @@index([scheduledDate])
   @@index([status])
+}
+
+// ─── SALE INSTALLMENTS & PAYMENTS ────────────────────────────────────────────
+
+enum InstallmentStatus {
+  PENDING
+  PAID
+}
+
+model SaleInstallment {
+  id        String            @id @default(cuid())
+  saleId    String
+  number    Int
+  amount    Decimal           @db.Decimal(10, 2)
+  dueDate   DateTime
+  status    InstallmentStatus @default(PENDING)
+  createdAt DateTime          @default(now())
+
+  sale     Sale      @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  followUp FollowUp?
+
+  @@index([saleId])
+}
+
+model SalePayment {
+  id            String        @id @default(cuid())
+  saleId        String
+  amount        Decimal       @db.Decimal(10, 2)
+  paymentMethod PaymentMethod @default(CASH)
+  note          String?
+  createdAt     DateTime      @default(now())
+
+  sale Sale @relation(fields: [saleId], references: [id], onDelete: Cascade)
+
+  @@index([saleId])
 }
 
 // ─── GOALS ───────────────────────────────────────────────────────────────────

@@ -5,9 +5,10 @@ import { useParams, useRouter } from "next/navigation";
 import { trpc } from "@/lib/trpc/client";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import {
-  ArrowLeft, Phone, Mail, MapPin, Cake, Tag, Sparkles, Hash,
+  ArrowLeft, Phone, Mail, MapPin, Cake, Tag, Sparkles,
   ShoppingBag, CalendarCheck, Pencil, X, Check, CheckCircle,
-  Plus, MessageCircle, Package, Home, Clock,
+  MessageCircle, Package, Home, Clock, DollarSign, CreditCard,
+  ChevronDown, ChevronUp,
 } from "lucide-react";
 
 const inputCls = "mt-1 w-full px-3 py-2.5 border-2 border-gray-100 rounded-xl text-sm focus:outline-none focus:border-mk-pink/50 transition-colors bg-gray-50 focus:bg-white";
@@ -20,15 +21,194 @@ const STATUS_CFG: Record<string, { label: string; cls: string }> = {
   CANCELLED: { label: "Cancelado",  cls: "bg-red-50 text-red-600 border border-red-200" },
 };
 
+const INST_STATUS_CFG: Record<string, { label: string; cls: string }> = {
+  PENDING: { label: "Pendiente", cls: "bg-amber-50 text-amber-700" },
+  PAID:    { label: "Pagado",    cls: "bg-emerald-50 text-emerald-700" },
+};
+
+const PAYMENT_LABELS: Record<string, string> = {
+  CASH: "Efectivo", TRANSFER: "Transferencia", CARD: "Tarjeta", CREDIT: "Crédito",
+};
+const PAYMENT_ICONS: Record<string, string> = {
+  CASH: "💵", TRANSFER: "🏦", CARD: "💳", CREDIT: "📋",
+};
+
 const FOLLOWUP_ICONS: Record<string, React.ElementType> = {
   CALL: Phone, WHATSAPP: MessageCircle, VISIT: Home,
-  DELIVERY: Package, POST_SALE: CheckCircle, BIRTHDAY: Cake, OTHER: Clock,
+  DELIVERY: Package, POST_SALE: CheckCircle, BIRTHDAY: Cake, PAYMENT: DollarSign, OTHER: Clock,
 };
 const FOLLOWUP_LABELS: Record<string, string> = {
   CALL: "Llamada", WHATSAPP: "WhatsApp", VISIT: "Visita",
-  DELIVERY: "Entrega", POST_SALE: "Post-venta", BIRTHDAY: "Cumpleaños", OTHER: "Otro",
+  DELIVERY: "Entrega", POST_SALE: "Post-venta", BIRTHDAY: "Cumpleaños", PAYMENT: "Pago de cuota", OTHER: "Otro",
 };
 
+// ── Add Payment Modal ────────────────────────────────────────────────────────
+function AddPaymentModal({ sale, onClose, onSuccess }: { sale: any; onClose: () => void; onSuccess: () => void }) {
+  const [amount, setAmount] = useState("");
+  const [method, setMethod] = useState<"CASH" | "TRANSFER" | "CARD" | "CREDIT">("CASH");
+  const [note, setNote] = useState("");
+
+  const remaining = Number(sale.total) - Number(sale.paidAmount);
+  const addPayment = trpc.sales.addPayment.useMutation({
+    onSuccess: () => { onSuccess(); onClose(); },
+  });
+
+  const amountNum = parseFloat(amount) || 0;
+  const canSubmit = amountNum > 0 && amountNum <= remaining + 0.01;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center z-[70] p-0 sm:p-4">
+      <div className="bg-white rounded-t-3xl sm:rounded-3xl p-6 w-full sm:max-w-md shadow-2xl">
+        <div className="flex items-center justify-between mb-5">
+          <div>
+            <p className="text-xs font-semibold text-mk-pink uppercase tracking-widest">Registrar</p>
+            <h2 className="text-lg font-bold text-gray-900">Abono de pago</h2>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100">
+            <X size={16} className="text-gray-500" />
+          </button>
+        </div>
+
+        <div className="bg-amber-50 rounded-xl px-4 py-3 border border-amber-100 mb-4">
+          <div className="flex justify-between text-sm">
+            <span className="text-gray-500">Total venta</span>
+            <span className="font-semibold text-gray-800">{formatCurrency(sale.total)}</span>
+          </div>
+          <div className="flex justify-between text-sm mt-1">
+            <span className="text-gray-500">Ya pagado</span>
+            <span className="font-semibold text-emerald-700">{formatCurrency(sale.paidAmount)}</span>
+          </div>
+          <div className="flex justify-between text-sm mt-1 pt-1 border-t border-amber-200">
+            <span className="font-semibold text-amber-700">Saldo pendiente</span>
+            <span className="font-bold text-amber-700">{formatCurrency(remaining)}</span>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <label className={labelCls}>Monto del abono (RD$)</label>
+            <input
+              type="number" min="1" step="0.01" value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              placeholder={`Máx. ${formatCurrency(remaining)}`}
+              className={inputCls}
+              autoFocus
+            />
+          </div>
+
+          <div>
+            <label className={labelCls + " flex items-center gap-1.5 mb-2"}><CreditCard size={10} /> Método de pago</label>
+            <div className="grid grid-cols-2 gap-2">
+              {(["CASH", "TRANSFER", "CARD", "CREDIT"] as const).map((m) => (
+                <button key={m} type="button" onClick={() => setMethod(m)}
+                  className={`flex items-center gap-2 px-3 py-2 rounded-xl border-2 text-xs font-semibold transition-all ${method === m ? "border-mk-pink bg-pink-50 text-mk-pink" : "border-gray-100 text-gray-500 hover:border-gray-200"}`}>
+                  <span>{PAYMENT_ICONS[m]}</span>{PAYMENT_LABELS[m]}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label className={labelCls}>Nota (opcional)</label>
+            <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Ej: pago en efectivo" className={inputCls} />
+          </div>
+
+          {addPayment.error && <p className="text-red-500 text-xs">{addPayment.error.message}</p>}
+
+          <button
+            onClick={() => addPayment.mutate({ saleId: sale.id, amount: amountNum, paymentMethod: method, note: note || undefined })}
+            disabled={!canSubmit || addPayment.isPending}
+            className="w-full py-3 bg-mk-pink text-white font-semibold rounded-xl disabled:opacity-60 hover:bg-pink-700 flex items-center justify-center gap-2">
+            {addPayment.isPending ? "Registrando..." : <><Check size={15} /> Registrar abono</>}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Sale row with expandable detail ─────────────────────────────────────────
+function SaleRow({ sale, onAbonar }: { sale: any; onAbonar: (sale: any) => void }) {
+  const [expanded, setExpanded] = useState(false);
+  const remaining = Number(sale.total) - Number(sale.paidAmount ?? 0);
+  const hasBalance = remaining > 0.01 && sale.status !== "CANCELLED";
+  const hasInstallments = (sale.installments?.length ?? 0) > 0;
+
+  return (
+    <>
+      <tr
+        className={`hover:bg-gray-50/50 transition-colors cursor-pointer ${expanded ? "bg-gray-50/30" : ""}`}
+        onClick={() => setExpanded((v) => !v)}
+      >
+        <td className="px-5 py-3 text-sm text-gray-500 whitespace-nowrap">{formatDate(sale.createdAt)}</td>
+        <td className="px-5 py-3 hidden sm:table-cell">
+          <div className="flex gap-1 flex-wrap">
+            {sale.items.slice(0, 2).map((item: any, i: number) => (
+              <span key={i} className="text-[11px] bg-gray-50 border border-gray-100 text-gray-500 px-2 py-0.5 rounded-full">
+                {item.product?.name} ×{item.quantity}
+              </span>
+            ))}
+            {sale.items.length > 2 && <span className="text-[11px] text-gray-400">+{sale.items.length - 2}</span>}
+          </div>
+        </td>
+        <td className="px-5 py-3 text-right whitespace-nowrap">
+          <p className="font-bold text-gray-900">{formatCurrency(sale.total)}</p>
+          {hasBalance && <p className="text-[11px] text-amber-600 font-semibold">Debe: {formatCurrency(remaining)}</p>}
+        </td>
+        <td className="px-5 py-3 text-center">
+          <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-full ${STATUS_CFG[sale.status]?.cls}`}>
+            {STATUS_CFG[sale.status]?.label}
+          </span>
+        </td>
+        <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
+          <div className="flex items-center justify-end gap-2">
+            {hasBalance && (
+              <button
+                onClick={() => onAbonar(sale)}
+                className="flex items-center gap-1 px-2.5 py-1 bg-mk-pink text-white text-[11px] font-bold rounded-lg hover:bg-pink-700 transition-colors">
+                <DollarSign size={10} /> Abonar
+              </button>
+            )}
+            <span className="text-gray-300">
+              {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            </span>
+          </div>
+        </td>
+      </tr>
+
+      {expanded && hasInstallments && (
+        <tr>
+          <td colSpan={5} className="px-5 pb-3 pt-0">
+            <div className="bg-gray-50 rounded-xl border border-gray-100 overflow-hidden">
+              <div className="flex items-center gap-2 px-4 py-2 border-b border-gray-100 bg-white">
+                <DollarSign size={12} className="text-mk-pink" />
+                <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Plan de cuotas</span>
+              </div>
+              <div className="divide-y divide-gray-100">
+                {sale.installments.map((inst: any) => (
+                  <div key={inst.id} className="flex items-center justify-between px-4 py-2.5">
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs font-bold text-gray-400 w-16">Cuota {inst.number}</span>
+                      <span className="text-xs text-gray-500">{formatDate(inst.dueDate)}</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm font-semibold text-gray-700">{formatCurrency(inst.amount)}</span>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${INST_STATUS_CFG[inst.status]?.cls}`}>
+                        {INST_STATUS_CFG[inst.status]?.label}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
+
+// ── Edit client modal ────────────────────────────────────────────────────────
 function EditClientModal({ client, onClose, onSuccess }: { client: any; onClose: () => void; onSuccess: () => void }) {
   const [name, setName] = useState(client.name ?? "");
   const [phone, setPhone] = useState(client.phone ?? "");
@@ -133,6 +313,7 @@ export default function ClientDetailPage() {
   const utils = trpc.useUtils();
   const [showEdit, setShowEdit] = useState(false);
   const [tab, setTab] = useState<"ventas" | "seguimientos">("ventas");
+  const [paymentSale, setPaymentSale] = useState<any>(null);
 
   const { data: client, isLoading } = trpc.clients.byId.useQuery({ id });
   const complete = trpc.followUps.complete.useMutation({ onSuccess: () => utils.clients.byId.invalidate({ id }) });
@@ -314,29 +495,12 @@ export default function ClientDetailPage() {
                       <th className="text-left px-5 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide hidden sm:table-cell">Productos</th>
                       <th className="text-right px-5 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Total</th>
                       <th className="text-center px-5 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Estado</th>
+                      <th className="px-4 py-3" />
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
                     {client.sales.map((sale: any) => (
-                      <tr key={sale.id} className="hover:bg-gray-50/50 transition-colors">
-                        <td className="px-5 py-3 text-sm text-gray-500 whitespace-nowrap">{formatDate(sale.createdAt)}</td>
-                        <td className="px-5 py-3 hidden sm:table-cell">
-                          <div className="flex gap-1 flex-wrap">
-                            {sale.items.slice(0, 2).map((item: any, i: number) => (
-                              <span key={i} className="text-[11px] bg-gray-50 border border-gray-100 text-gray-500 px-2 py-0.5 rounded-full">
-                                {item.product?.name} ×{item.quantity}
-                              </span>
-                            ))}
-                            {sale.items.length > 2 && <span className="text-[11px] text-gray-400">+{sale.items.length - 2}</span>}
-                          </div>
-                        </td>
-                        <td className="px-5 py-3 text-right font-bold text-gray-900 whitespace-nowrap">{formatCurrency(sale.total)}</td>
-                        <td className="px-5 py-3 text-center">
-                          <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-full ${STATUS_CFG[sale.status]?.cls}`}>
-                            {STATUS_CFG[sale.status]?.label}
-                          </span>
-                        </td>
-                      </tr>
+                      <SaleRow key={sale.id} sale={sale} onAbonar={setPaymentSale} />
                     ))}
                   </tbody>
                 </table>
@@ -389,6 +553,14 @@ export default function ClientDetailPage() {
         <EditClientModal
           client={client}
           onClose={() => setShowEdit(false)}
+          onSuccess={() => utils.clients.byId.invalidate({ id })}
+        />
+      )}
+
+      {paymentSale && (
+        <AddPaymentModal
+          sale={paymentSale}
+          onClose={() => setPaymentSale(null)}
           onSuccess={() => utils.clients.byId.invalidate({ id })}
         />
       )}

@@ -23,7 +23,7 @@ export const salesRouter = router({
       })
     )
     .query(async ({ ctx, input }) => {
-            const { consultantId, clientId, status, from, to, page, limit } = input;
+      const { consultantId, clientId, status, from, to, page, limit } = input;
       const skip = (page - 1) * limit;
 
       let consultantFilter: string | { in: string[] };
@@ -70,6 +70,9 @@ export const salesRouter = router({
             items: {
               include: { product: { select: { id: true, name: true, images: true } } },
             },
+            installments: {
+              select: { id: true, number: true, amount: true, dueDate: true, status: true },
+            },
           },
         }),
         ctx.prisma.sale.count({ where }),
@@ -87,6 +90,8 @@ export const salesRouter = router({
           consultant: { select: { id: true, name: true, avatar: true } },
           client: true,
           items: { include: { product: true } },
+          installments: { orderBy: { number: "asc" } },
+          payments: { orderBy: { createdAt: "asc" } },
         },
       });
       if (!sale) throw new TRPCError({ code: "NOT_FOUND" });
@@ -99,19 +104,24 @@ export const salesRouter = router({
         clientId: z.string().optional(),
         clientName: z.string().optional(),
         paymentMethod: z.enum(["CASH", "TRANSFER", "CARD", "CREDIT"]).default("CASH"),
+        paymentMode: z.enum(["PAID", "PENDING", "INSTALLMENTS"]).default("PAID"),
+        installmentsConfig: z
+          .object({
+            count: z.number().int().min(2).max(24),
+            firstDueDate: z.string(),
+          })
+          .optional(),
         notes: z.string().optional(),
         items: z.array(saleItemSchema).min(1),
         requestId: z.string().optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
-      
       const total = input.items.reduce((sum, item) => {
         const subtotal = item.quantity * item.unitPrice - item.discount;
         return sum + subtotal;
       }, 0);
 
-      // Verificar y descontar inventario
       await ctx.prisma.$transaction(async (tx) => {
         for (const item of input.items) {
           const product = await tx.product.findUnique({
@@ -151,13 +161,18 @@ export const salesRouter = router({
           });
         }
 
+        const saleStatus = input.paymentMode === "PAID" ? "PAID" : "PENDING";
+        const paidAmount = input.paymentMode === "PAID" ? total : 0;
+
         const sale = await tx.sale.create({
           data: {
             consultantId: ctx.user.id,
             clientId: input.clientId || null,
             clientName: input.clientName || null,
             total,
+            paidAmount,
             paymentMethod: input.paymentMethod,
+            status: saleStatus,
             notes: input.notes,
             sourceType: input.requestId ? "LINK_REQUEST" : "MANUAL",
             requestId: input.requestId || null,
@@ -174,24 +189,132 @@ export const salesRouter = router({
           include: { items: true },
         });
 
-        // Crear seguimiento post-venta automático (7 días)
-        const followUpDate = new Date();
-        followUpDate.setDate(followUpDate.getDate() + 7);
+        if (input.paymentMode === "INSTALLMENTS" && input.installmentsConfig) {
+          const { count, firstDueDate } = input.installmentsConfig;
+          const installmentAmount = total / count;
 
-        await tx.followUp.create({
-          data: {
-            consultantId: ctx.user.id,
-            clientId: input.clientId || null,
-            type: "POST_SALE",
-            scheduledDate: followUpDate,
-            note: `Seguimiento post-venta. Total: RD$${total.toFixed(2)}`,
-          },
-        });
+          for (let i = 0; i < count; i++) {
+            const base = new Date(firstDueDate + "T12:00:00.000Z");
+            const dueDate = new Date(base);
+            dueDate.setMonth(dueDate.getMonth() + i);
+
+            const installment = await tx.saleInstallment.create({
+              data: {
+                saleId: sale.id,
+                number: i + 1,
+                amount: installmentAmount,
+                dueDate,
+              },
+            });
+
+            await tx.followUp.create({
+              data: {
+                consultantId: ctx.user.id,
+                clientId: input.clientId || null,
+                type: "PAYMENT",
+                scheduledDate: dueDate,
+                note: `Cuota ${i + 1}/${count} — RD$${installmentAmount.toFixed(2)}`,
+                saleInstallmentId: installment.id,
+              },
+            });
+          }
+        } else {
+          const followUpDate = new Date();
+          followUpDate.setDate(followUpDate.getDate() + 7);
+
+          await tx.followUp.create({
+            data: {
+              consultantId: ctx.user.id,
+              clientId: input.clientId || null,
+              type: "POST_SALE",
+              scheduledDate: followUpDate,
+              note: `Seguimiento post-venta. Total: RD$${total.toFixed(2)}`,
+            },
+          });
+        }
 
         return sale;
       });
 
       return { success: true, total };
+    }),
+
+  addPayment: protectedProcedure
+    .input(
+      z.object({
+        saleId: z.string(),
+        amount: z.number().positive(),
+        paymentMethod: z.enum(["CASH", "TRANSFER", "CARD", "CREDIT"]).default("CASH"),
+        note: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      return ctx.prisma.$transaction(async (tx) => {
+        const sale = await tx.sale.findUnique({
+          where: { id: input.saleId },
+          include: {
+            installments: {
+              where: { status: "PENDING" },
+              orderBy: { dueDate: "asc" },
+            },
+          },
+        });
+        if (!sale) throw new TRPCError({ code: "NOT_FOUND" });
+        if (sale.consultantId !== ctx.user.id && ctx.user.role !== "DIRECTORA" && ctx.user.role !== "ADMIN") {
+          throw new TRPCError({ code: "FORBIDDEN" });
+        }
+
+        await tx.salePayment.create({
+          data: {
+            saleId: input.saleId,
+            amount: input.amount,
+            paymentMethod: input.paymentMethod,
+            note: input.note,
+          },
+        });
+
+        const newPaidAmount = Number(sale.paidAmount) + input.amount;
+
+        let remaining = input.amount;
+        const paidInstallmentIds: string[] = [];
+
+        for (const inst of sale.installments) {
+          if (remaining <= 0) break;
+          if (remaining >= Number(inst.amount)) {
+            paidInstallmentIds.push(inst.id);
+            remaining -= Number(inst.amount);
+          }
+        }
+
+        if (paidInstallmentIds.length > 0) {
+          await tx.saleInstallment.updateMany({
+            where: { id: { in: paidInstallmentIds } },
+            data: { status: "PAID" },
+          });
+          await tx.followUp.updateMany({
+            where: { saleInstallmentId: { in: paidInstallmentIds } },
+            data: { status: "DONE" },
+          });
+        }
+
+        const newStatus = newPaidAmount >= Number(sale.total) ? "PAID" : "PENDING";
+
+        await tx.sale.update({
+          where: { id: input.saleId },
+          data: { paidAmount: newPaidAmount, status: newStatus },
+        });
+
+        return { success: true, newPaidAmount, status: newStatus };
+      });
+    }),
+
+  listPayments: protectedProcedure
+    .input(z.object({ saleId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      return ctx.prisma.salePayment.findMany({
+        where: { saleId: input.saleId },
+        orderBy: { createdAt: "asc" },
+      });
     }),
 
   updateStatus: protectedProcedure
@@ -217,7 +340,6 @@ export const salesRouter = router({
       })
     )
     .query(async ({ ctx, input }) => {
-      
       let consultantFilter: string | { in: string[] };
       if (ctx.user.role === "DIRECTORA" && input.consultantId) {
         consultantFilter = input.consultantId;
@@ -246,7 +368,6 @@ export const salesRouter = router({
       const totalAmount = sales.reduce((s, sale) => s + Number(sale.total), 0);
       const totalCount = sales.length;
 
-      // Top productos
       const productMap: Record<string, { name: string; qty: number; amount: number }> = {};
       for (const sale of sales) {
         for (const item of sale.items) {
@@ -263,7 +384,6 @@ export const salesRouter = router({
         .sort((a, b) => b.qty - a.qty)
         .slice(0, 10);
 
-      // Por consultora (solo directora)
       const byConsultant: Record<string, { name: string; total: number; count: number }> = {};
       for (const sale of sales) {
         const key = sale.consultantId;

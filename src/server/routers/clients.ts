@@ -89,7 +89,10 @@ export const clientsRouter = router({
           user: { select: { id: true, name: true } },
           sales: {
             orderBy: { createdAt: "desc" },
-            include: { items: { include: { product: true } } },
+            include: {
+              items: { include: { product: true } },
+              installments: { select: { id: true, number: true, amount: true, dueDate: true, status: true }, orderBy: { number: "asc" } },
+            },
           },
           followUps: { orderBy: { scheduledDate: "asc" } },
         },

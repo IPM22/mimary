@@ -6,7 +6,7 @@ import { formatCurrency, formatDate } from "@/lib/utils";
 import {
   Plus, ShoppingBag, X, ChevronLeft, ChevronRight, Receipt,
   Search, Minus, Trash2, ShoppingCart, CreditCard, Check,
-  Package, User,
+  Package, User, DollarSign, CalendarDays, Banknote,
 } from "lucide-react";
 
 const PAYMENT_LABELS: Record<string, string> = {
@@ -20,6 +20,10 @@ const STATUS_CFG: Record<string, { label: string; cls: string }> = {
   PAID:      { label: "Pagado",     cls: "bg-emerald-50 text-emerald-700 border border-emerald-200" },
   DELIVERED: { label: "Entregado",  cls: "bg-blue-50 text-blue-700 border border-blue-200" },
   CANCELLED: { label: "Cancelado",  cls: "bg-red-50 text-red-600 border border-red-200" },
+};
+const INSTALLMENT_STATUS_CFG: Record<string, { label: string; cls: string }> = {
+  PENDING: { label: "Pendiente", cls: "bg-amber-50 text-amber-700 border border-amber-200" },
+  PAID:    { label: "Pagado",    cls: "bg-emerald-50 text-emerald-700 border border-emerald-200" },
 };
 
 type CartItem = {
@@ -142,8 +146,88 @@ function ClientCombobox({ clientId, clientName, onClientChange, onNameChange }: 
   );
 }
 
+// ── Add Payment Modal ────────────────────────────────────────────────────────
+function AddPaymentForm({ saleId, remaining, onSuccess }: { saleId: string; remaining: number; onSuccess: () => void }) {
+  const [amount, setAmount] = useState(remaining.toFixed(2));
+  const [method, setMethod] = useState<"CASH" | "TRANSFER" | "CARD" | "CREDIT">("CASH");
+  const [note, setNote] = useState("");
+  const utils = trpc.useUtils();
+
+  const addPayment = trpc.sales.addPayment.useMutation({
+    onSuccess: () => {
+      utils.sales.list.invalidate();
+      utils.sales.byId.invalidate({ id: saleId });
+      onSuccess();
+    },
+  });
+
+  return (
+    <div className="border border-emerald-100 bg-emerald-50/30 rounded-2xl p-4 space-y-3">
+      <p className="text-xs font-bold text-emerald-700 uppercase tracking-widest flex items-center gap-1.5">
+        <Banknote size={12} /> Registrar abono
+      </p>
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest">Monto</label>
+          <input
+            type="number" min="0.01" step="0.01"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            className="mt-1 w-full px-3 py-2 border-2 border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:border-emerald-400/60 font-semibold"
+          />
+        </div>
+        <div>
+          <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest">Notas</label>
+          <input
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="Opcional"
+            className="mt-1 w-full px-3 py-2 border-2 border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:border-gray-300"
+          />
+        </div>
+      </div>
+      <div className="grid grid-cols-4 gap-1.5">
+        {(["CASH", "TRANSFER", "CARD", "CREDIT"] as const).map((m) => (
+          <button key={m} type="button" onClick={() => setMethod(m)}
+            className={`flex items-center justify-center gap-1 px-2 py-1.5 rounded-xl border-2 text-[11px] font-semibold transition-all ${method === m ? "border-emerald-400 bg-emerald-50 text-emerald-700" : "border-gray-100 text-gray-500 hover:border-gray-200"}`}>
+            <span>{PAYMENT_ICONS[m]}</span>{PAYMENT_LABELS[m]}
+          </button>
+        ))}
+      </div>
+      <button
+        onClick={() => addPayment.mutate({ saleId, amount: parseFloat(amount) || 0, paymentMethod: method, note: note || undefined })}
+        disabled={addPayment.isPending || !parseFloat(amount)}
+        className="w-full py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold rounded-xl text-sm disabled:opacity-60 flex items-center justify-center gap-2">
+        {addPayment.isPending ? "Registrando..." : <><Check size={14} /> Registrar abono</>}
+      </button>
+      {addPayment.error && <p className="text-red-500 text-xs">{addPayment.error.message}</p>}
+    </div>
+  );
+}
+
 // ── Sale detail modal ───────────────────────────────────────────────────────
-function SaleDetailModal({ sale, onClose, onStatusChange }: { sale: any; onClose: () => void; onStatusChange: (id: string, status: string) => void }) {
+function SaleDetailModal({ saleId, onClose, onStatusChange }: { saleId: string; onClose: () => void; onStatusChange: (id: string, status: string) => void }) {
+  const [showPaymentForm, setShowPaymentForm] = useState(false);
+  const { data: sale, isLoading } = trpc.sales.byId.useQuery({ id: saleId });
+
+  if (isLoading || !sale) {
+    return (
+      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center z-[60] p-0 sm:p-4">
+        <div className="bg-white rounded-t-3xl sm:rounded-3xl p-6 w-full sm:max-w-lg shadow-2xl animate-pulse">
+          <div className="h-6 bg-gray-200 rounded-xl w-32 mb-4" />
+          <div className="space-y-3">
+            {[...Array(4)].map((_, i) => <div key={i} className="h-16 bg-gray-100 rounded-xl" />)}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const paidAmount = Number(sale.paidAmount);
+  const total = Number(sale.total);
+  const remaining = total - paidAmount;
+  const hasBalance = remaining > 0.01 && sale.status !== "CANCELLED";
+
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center z-[60] p-0 sm:p-4">
       <div className="bg-white rounded-t-3xl sm:rounded-3xl p-6 w-full sm:max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto">
@@ -156,10 +240,11 @@ function SaleDetailModal({ sale, onClose, onStatusChange }: { sale: any; onClose
         </div>
 
         <div className="space-y-4">
+          {/* Summary grid */}
           <div className="grid grid-cols-2 gap-3 text-sm">
             <div className="bg-gray-50 rounded-xl p-3">
               <p className="text-xs text-gray-400 mb-0.5">Cliente</p>
-              <p className="font-semibold text-gray-900">{sale.client?.name ?? sale.clientName ?? "Sin cliente"}</p>
+              <p className="font-semibold text-gray-900">{sale.client?.name ?? (sale as any).clientName ?? "Sin cliente"}</p>
             </div>
             <div className="bg-gray-50 rounded-xl p-3">
               <p className="text-xs text-gray-400 mb-0.5">Fecha</p>
@@ -178,6 +263,48 @@ function SaleDetailModal({ sale, onClose, onStatusChange }: { sale: any; onClose
             </div>
           </div>
 
+          {/* Balance */}
+          <div className={`rounded-xl px-4 py-3 border flex items-center justify-between ${hasBalance ? "bg-amber-50 border-amber-100" : "bg-pink-50 border-pink-100"}`}>
+            <div className="space-y-0.5">
+              <p className="text-xs text-gray-500">Total venta</p>
+              <p className="text-xl font-bold text-mk-pink">{formatCurrency(total)}</p>
+            </div>
+            {paidAmount > 0 && (
+              <div className="text-right space-y-0.5">
+                <p className="text-xs text-gray-500">Pagado</p>
+                <p className="text-sm font-bold text-emerald-600">{formatCurrency(paidAmount)}</p>
+                {hasBalance && <p className="text-xs text-amber-700 font-semibold">Pendiente: {formatCurrency(remaining)}</p>}
+              </div>
+            )}
+          </div>
+
+          {/* Installments */}
+          {sale.installments && sale.installments.length > 0 && (
+            <div className="border border-gray-100 rounded-xl overflow-hidden">
+              <div className="bg-gray-50 px-4 py-2.5 flex items-center gap-2 border-b border-gray-100">
+                <CalendarDays size={13} className="text-gray-400" />
+                <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Cuotas</span>
+              </div>
+              <div className="divide-y divide-gray-50">
+                {sale.installments.map((inst: any) => (
+                  <div key={inst.id} className="flex items-center justify-between px-4 py-2.5">
+                    <div className="flex items-center gap-2.5">
+                      <span className="w-5 h-5 rounded-full bg-gray-100 flex items-center justify-center text-[10px] font-bold text-gray-500">{inst.number}</span>
+                      <span className="text-sm text-gray-700">{formatDate(inst.dueDate)}</span>
+                    </div>
+                    <div className="flex items-center gap-2.5">
+                      <span className="text-sm font-semibold text-gray-900">{formatCurrency(inst.amount)}</span>
+                      <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${INSTALLMENT_STATUS_CFG[inst.status]?.cls}`}>
+                        {INSTALLMENT_STATUS_CFG[inst.status]?.label}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Products */}
           <div className="border border-gray-100 rounded-xl overflow-hidden">
             <div className="bg-gray-50 px-4 py-2.5 flex items-center gap-2 border-b border-gray-100">
               <Package size={13} className="text-gray-400" />
@@ -200,6 +327,27 @@ function SaleDetailModal({ sale, onClose, onStatusChange }: { sale: any; onClose
             </div>
           </div>
 
+          {/* Payment history */}
+          {sale.payments && sale.payments.length > 0 && (
+            <div className="border border-gray-100 rounded-xl overflow-hidden">
+              <div className="bg-gray-50 px-4 py-2.5 flex items-center gap-2 border-b border-gray-100">
+                <DollarSign size={13} className="text-gray-400" />
+                <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Abonos realizados</span>
+              </div>
+              <div className="divide-y divide-gray-50">
+                {sale.payments.map((p: any) => (
+                  <div key={p.id} className="flex items-center justify-between px-4 py-2.5">
+                    <div>
+                      <p className="text-sm text-gray-700">{formatDate(p.createdAt)} · {PAYMENT_ICONS[p.paymentMethod]} {PAYMENT_LABELS[p.paymentMethod]}</p>
+                      {p.note && <p className="text-xs text-gray-400">{p.note}</p>}
+                    </div>
+                    <p className="text-sm font-bold text-emerald-600">{formatCurrency(p.amount)}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {sale.notes && (
             <div className="bg-gray-50 rounded-xl px-4 py-3">
               <p className="text-xs text-gray-400 mb-1">Notas</p>
@@ -207,10 +355,22 @@ function SaleDetailModal({ sale, onClose, onStatusChange }: { sale: any; onClose
             </div>
           )}
 
-          <div className="flex items-center justify-between bg-pink-50 rounded-xl px-4 py-3 border border-pink-100">
-            <span className="text-sm font-semibold text-gray-700">Total</span>
-            <span className="text-xl font-bold text-mk-pink">{formatCurrency(sale.total)}</span>
-          </div>
+          {/* Add payment */}
+          {hasBalance && !showPaymentForm && (
+            <button
+              onClick={() => setShowPaymentForm(true)}
+              className="w-full py-2.5 border-2 border-emerald-200 text-emerald-700 font-semibold rounded-xl text-sm hover:bg-emerald-50 transition-colors flex items-center justify-center gap-2">
+              <Banknote size={15} /> Agregar abono
+            </button>
+          )}
+
+          {hasBalance && showPaymentForm && (
+            <AddPaymentForm
+              saleId={sale.id}
+              remaining={remaining}
+              onSuccess={() => setShowPaymentForm(false)}
+            />
+          )}
         </div>
       </div>
     </div>
@@ -225,6 +385,9 @@ function NewSaleModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: 
   const [clientId, setClientId] = useState("");
   const [clientName, setClientName] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<"CASH" | "TRANSFER" | "CARD" | "CREDIT">("CASH");
+  const [paymentMode, setPaymentMode] = useState<"PAID" | "PENDING" | "INSTALLMENTS">("PAID");
+  const [installmentCount, setInstallmentCount] = useState(2);
+  const [firstDueDate, setFirstDueDate] = useState("");
   const [notes, setNotes] = useState("");
   const [step, setStep] = useState<"products" | "checkout">("products");
 
@@ -279,10 +442,15 @@ function NewSaleModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: 
   }
   function handleSubmit() {
     if (cart.length === 0) return;
+    if (paymentMode === "INSTALLMENTS" && (!firstDueDate || installmentCount < 2)) return;
     create.mutate({
-      clientId: clientId || undefined, clientName: clientName || undefined,
-      paymentMethod, notes: notes || undefined,
+      clientId: clientId || undefined,
+      clientName: clientName || undefined,
+      paymentMethod,
+      paymentMode,
+      notes: notes || undefined,
       items: cart.map((i) => ({ productId: i.productId, quantity: i.quantity, unitPrice: i.unitPrice, discount: i.discount })),
+      installmentsConfig: paymentMode === "INSTALLMENTS" ? { count: installmentCount, firstDueDate } : undefined,
     });
   }
   const cartQtyMap = useMemo(() => {
@@ -290,6 +458,8 @@ function NewSaleModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: 
     cart.forEach((i) => { map[i.productId] = i.quantity; });
     return map;
   }, [cart]);
+
+  const canSubmit = cart.length > 0 && (paymentMode !== "INSTALLMENTS" || (!!firstDueDate && installmentCount >= 2));
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] flex items-stretch md:items-center justify-center md:p-4">
@@ -436,6 +606,7 @@ function NewSaleModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: 
             {/* Footer: payment + submit */}
             {cart.length > 0 && (
               <div className="border-t border-gray-100 p-4 space-y-3 flex-shrink-0">
+                {/* Payment method */}
                 <div>
                   <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-1.5 mb-1.5"><CreditCard size={10} /> Método de pago</label>
                   <div className="grid grid-cols-2 gap-1.5">
@@ -447,6 +618,45 @@ function NewSaleModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: 
                     ))}
                   </div>
                 </div>
+
+                {/* Payment mode */}
+                <div>
+                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-1.5 mb-1.5"><DollarSign size={10} /> Forma de cobro</label>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {([
+                      { value: "PAID" as const, label: "Saldado", icon: "✅" },
+                      { value: "PENDING" as const, label: "Pendiente", icon: "⏳" },
+                      { value: "INSTALLMENTS" as const, label: "Cuotas", icon: "📅" },
+                    ]).map((m) => (
+                      <button key={m.value} type="button" onClick={() => setPaymentMode(m.value)}
+                        className={`flex flex-col items-center gap-0.5 px-2 py-2 rounded-xl border-2 text-[11px] font-semibold transition-all ${paymentMode === m.value ? "border-mk-pink bg-pink-50 text-mk-pink" : "border-gray-100 text-gray-500 hover:border-gray-200"}`}>
+                        <span>{m.icon}</span>{m.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {paymentMode === "INSTALLMENTS" && (
+                    <div className="grid grid-cols-2 gap-2 mt-2">
+                      <div>
+                        <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest">Cant. cuotas</label>
+                        <input
+                          type="number" min="2" max="24" value={installmentCount}
+                          onChange={(e) => setInstallmentCount(Math.min(24, Math.max(2, parseInt(e.target.value) || 2)))}
+                          className="mt-1 w-full px-3 py-2 border-2 border-gray-200 rounded-xl text-sm bg-gray-50 focus:outline-none focus:border-mk-pink/50 font-semibold"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest">Primera cuota</label>
+                        <input
+                          type="date" value={firstDueDate}
+                          onChange={(e) => setFirstDueDate(e.target.value)}
+                          className="mt-1 w-full px-3 py-2 border-2 border-gray-200 rounded-xl text-sm bg-gray-50 focus:outline-none focus:border-mk-pink/50 text-gray-700"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} placeholder="Notas (opcional)"
                   className="w-full px-3 py-2 border-2 border-gray-100 rounded-xl text-sm bg-gray-50 focus:outline-none focus:border-mk-pink/50 resize-none" />
                 <div className="bg-pink-50 rounded-2xl px-4 py-3 flex items-center justify-between border border-pink-100">
@@ -454,7 +664,7 @@ function NewSaleModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: 
                     <p className="text-xs text-gray-500">{itemCount} producto{itemCount !== 1 ? "s" : ""}</p>
                     <p className="text-xl font-bold text-mk-pink">{formatCurrency(Math.max(0, total))}</p>
                   </div>
-                  <button onClick={handleSubmit} disabled={create.isPending}
+                  <button onClick={handleSubmit} disabled={create.isPending || !canSubmit}
                     className="flex items-center gap-2 px-5 py-2.5 bg-mk-pink text-white font-bold rounded-xl disabled:opacity-60 hover:bg-pink-700 text-sm">
                     {create.isPending ? "..." : <><Check size={15} /> Registrar</>}
                   </button>
@@ -481,7 +691,7 @@ export default function VentasPage() {
   const [datePreset, setDatePreset] = useState<"" | "today" | "week" | "month" | "custom">("");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
-  const [selectedSale, setSelectedSale] = useState<any>(null);
+  const [selectedSaleId, setSelectedSaleId] = useState<string | null>(null);
   const utils = trpc.useUtils();
 
   function applyPreset(preset: typeof datePreset) {
@@ -509,7 +719,7 @@ export default function VentasPage() {
     { placeholderData: (prev: any) => prev }
   );
   const updateStatus = trpc.sales.updateStatus.useMutation({
-    onSuccess: () => { utils.sales.list.invalidate(); if (selectedSale) setSelectedSale((s: any) => ({ ...s, status: s.status })); },
+    onSuccess: () => { utils.sales.list.invalidate(); },
   });
 
   const STATUS_FILTERS = [
@@ -522,7 +732,6 @@ export default function VentasPage() {
 
   function handleStatusChange(id: string, status: string) {
     updateStatus.mutate({ id, status: status as any });
-    if (selectedSale?.id === id) setSelectedSale((s: any) => ({ ...s, status }));
   }
 
   return (
@@ -640,67 +849,77 @@ export default function VentasPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {data?.sales.map((sale) => (
-                  <tr key={sale.id} onClick={() => setSelectedSale(sale)}
-                    className="hover:bg-gray-50/50 transition-colors cursor-pointer">
-                    <td className="px-5 py-3.5 text-sm text-gray-500 whitespace-nowrap">{formatDate(sale.createdAt)}</td>
-                    <td className="px-5 py-3.5">
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-7 h-7 rounded-lg bg-pink-50 flex items-center justify-center flex-shrink-0">
-                          <ShoppingBag size={13} className="text-mk-pink" />
+                {data?.sales.map((sale) => {
+                  const balance = Number(sale.total) - Number((sale as any).paidAmount ?? 0);
+                  return (
+                    <tr key={sale.id} onClick={() => setSelectedSaleId(sale.id)}
+                      className="hover:bg-gray-50/50 transition-colors cursor-pointer">
+                      <td className="px-5 py-3.5 text-sm text-gray-500 whitespace-nowrap">{formatDate(sale.createdAt)}</td>
+                      <td className="px-5 py-3.5">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-7 h-7 rounded-lg bg-pink-50 flex items-center justify-center flex-shrink-0">
+                            <ShoppingBag size={13} className="text-mk-pink" />
+                          </div>
+                          <div>
+                            <span className="font-medium text-gray-900">{sale.client?.name ?? (sale as any).clientName ?? "Sin cliente"}</span>
+                            {balance > 0.01 && <p className="text-[11px] text-amber-600 font-semibold">Pendiente: {formatCurrency(balance)}</p>}
+                          </div>
                         </div>
-                        <span className="font-medium text-gray-900">{sale.client?.name ?? (sale as any).clientName ?? "Sin cliente"}</span>
-                      </div>
-                    </td>
-                    <td className="px-5 py-3.5">
-                      <div className="flex gap-1 flex-wrap">
-                        {sale.items.slice(0, 3).map((item: any, i: number) => (
-                          <span key={i} className="text-[11px] bg-gray-50 border border-gray-100 text-gray-500 px-2 py-0.5 rounded-full">
-                            {item.product?.name ?? "Producto"} ×{item.quantity}
-                          </span>
-                        ))}
-                        {sale.items.length > 3 && (
-                          <span className="text-[11px] bg-gray-50 border border-gray-100 text-gray-400 px-2 py-0.5 rounded-full">+{sale.items.length - 3}</span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-5 py-3.5 text-sm text-gray-500">
-                      <span className="flex items-center gap-1">{PAYMENT_ICONS[sale.paymentMethod]} {PAYMENT_LABELS[sale.paymentMethod]}</span>
-                    </td>
-                    <td className="px-5 py-3.5 text-right font-bold text-gray-900 whitespace-nowrap">{formatCurrency(sale.total)}</td>
-                    <td className="px-5 py-3.5 text-center" onClick={(e) => e.stopPropagation()}>
-                      <select value={sale.status} onChange={(e) => handleStatusChange(sale.id, e.target.value)}
-                        className={`text-xs px-2.5 py-1 rounded-full font-semibold cursor-pointer border-0 appearance-none ${STATUS_CFG[sale.status]?.cls}`}>
-                        {Object.entries(STATUS_CFG).map(([v, { label }]) => <option key={v} value={v}>{label}</option>)}
-                      </select>
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td className="px-5 py-3.5">
+                        <div className="flex gap-1 flex-wrap">
+                          {sale.items.slice(0, 3).map((item: any, i: number) => (
+                            <span key={i} className="text-[11px] bg-gray-50 border border-gray-100 text-gray-500 px-2 py-0.5 rounded-full">
+                              {item.product?.name ?? "Producto"} ×{item.quantity}
+                            </span>
+                          ))}
+                          {sale.items.length > 3 && (
+                            <span className="text-[11px] bg-gray-50 border border-gray-100 text-gray-400 px-2 py-0.5 rounded-full">+{sale.items.length - 3}</span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-5 py-3.5 text-sm text-gray-500">
+                        <span className="flex items-center gap-1">{PAYMENT_ICONS[sale.paymentMethod]} {PAYMENT_LABELS[sale.paymentMethod]}</span>
+                      </td>
+                      <td className="px-5 py-3.5 text-right font-bold text-gray-900 whitespace-nowrap">{formatCurrency(sale.total)}</td>
+                      <td className="px-5 py-3.5 text-center" onClick={(e) => e.stopPropagation()}>
+                        <select value={sale.status} onChange={(e) => handleStatusChange(sale.id, e.target.value)}
+                          className={`text-xs px-2.5 py-1 rounded-full font-semibold cursor-pointer border-0 appearance-none ${STATUS_CFG[sale.status]?.cls}`}>
+                          {Object.entries(STATUS_CFG).map(([v, { label }]) => <option key={v} value={v}>{label}</option>)}
+                        </select>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
 
           {/* Mobile list */}
           <div className="md:hidden divide-y divide-gray-50">
-            {data?.sales.map((sale) => (
-              <div key={sale.id} onClick={() => setSelectedSale(sale)} className="p-4 cursor-pointer active:bg-gray-50">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-pink-50 flex items-center justify-center flex-shrink-0">
-                    <ShoppingBag size={16} className="text-mk-pink" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-gray-900 text-sm truncate">{sale.client?.name ?? (sale as any).clientName ?? "Sin cliente"}</p>
-                    <p className="text-xs text-gray-400 mt-0.5">{formatDate(sale.createdAt)} · {PAYMENT_LABELS[sale.paymentMethod]}</p>
-                  </div>
-                  <div className="text-right flex-shrink-0 space-y-1.5">
-                    <p className="font-bold text-gray-900">{formatCurrency(sale.total)}</p>
-                    <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-full inline-block ${STATUS_CFG[sale.status]?.cls}`}>
-                      {STATUS_CFG[sale.status]?.label}
-                    </span>
+            {data?.sales.map((sale) => {
+              const balance = Number(sale.total) - Number((sale as any).paidAmount ?? 0);
+              return (
+                <div key={sale.id} onClick={() => setSelectedSaleId(sale.id)} className="p-4 cursor-pointer active:bg-gray-50">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-pink-50 flex items-center justify-center flex-shrink-0">
+                      <ShoppingBag size={16} className="text-mk-pink" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-gray-900 text-sm truncate">{sale.client?.name ?? (sale as any).clientName ?? "Sin cliente"}</p>
+                      <p className="text-xs text-gray-400 mt-0.5">{formatDate(sale.createdAt)} · {PAYMENT_LABELS[sale.paymentMethod]}</p>
+                      {balance > 0.01 && <p className="text-[11px] text-amber-600 font-semibold mt-0.5">Pendiente: {formatCurrency(balance)}</p>}
+                    </div>
+                    <div className="text-right flex-shrink-0 space-y-1.5">
+                      <p className="font-bold text-gray-900">{formatCurrency(sale.total)}</p>
+                      <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-full inline-block ${STATUS_CFG[sale.status]?.cls}`}>
+                        {STATUS_CFG[sale.status]?.label}
+                      </span>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           {/* Pagination */}
@@ -723,10 +942,10 @@ export default function VentasPage() {
       )}
 
       {showForm && <NewSaleModal onClose={() => setShowForm(false)} onSuccess={() => utils.sales.list.invalidate()} />}
-      {selectedSale && (
+      {selectedSaleId && (
         <SaleDetailModal
-          sale={selectedSale}
-          onClose={() => setSelectedSale(null)}
+          saleId={selectedSaleId}
+          onClose={() => setSelectedSaleId(null)}
           onStatusChange={handleStatusChange}
         />
       )}

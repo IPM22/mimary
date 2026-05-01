@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc/client";
 import { formatDate } from "@/lib/utils";
-import { Plus, CheckCircle, Clock, Phone, MessageCircle, Package, Home, X, CalendarCheck } from "lucide-react";
+import { Plus, CheckCircle, Clock, Phone, MessageCircle, Package, Home, X, CalendarCheck, DollarSign } from "lucide-react";
 
 const TYPE_CONFIG: Record<string, { label: string; icon: React.ElementType; bg: string; text: string; border: string }> = {
   CALL:      { label: "Llamada",    icon: Phone,          bg: "bg-blue-50",    text: "text-blue-500",     border: "border-blue-200" },
@@ -12,6 +12,7 @@ const TYPE_CONFIG: Record<string, { label: string; icon: React.ElementType; bg: 
   DELIVERY:  { label: "Entrega",    icon: Package,        bg: "bg-orange-50",  text: "text-orange-500",   border: "border-orange-200" },
   POST_SALE: { label: "Post-venta", icon: CheckCircle,    bg: "bg-pink-50",    text: "text-mk-pink",      border: "border-pink-200" },
   BIRTHDAY:  { label: "Cumpleaños", icon: CalendarCheck,  bg: "bg-yellow-50",  text: "text-yellow-600",   border: "border-yellow-200" },
+  PAYMENT:   { label: "Pago cuota", icon: DollarSign,     bg: "bg-emerald-50", text: "text-emerald-600",  border: "border-emerald-200" },
   OTHER:     { label: "Otro",       icon: Clock,          bg: "bg-gray-100",   text: "text-gray-500",     border: "border-gray-200" },
 };
 
