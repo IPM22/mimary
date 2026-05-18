@@ -41,7 +41,6 @@ model User {
   followUps       FollowUp[]
   goalsAsTarget   Goal[]           @relation("GoalTarget")
   goalsAsDirector Goal[]           @relation("GoalDirectora")
-  priceOverrides  ConsultantPrice[]
 
   creationRequests UserCreationRequest[] @relation("RequestedBy")
   childRequests    UserCreationRequest[] @relation("RequestParent")
@@ -80,46 +79,33 @@ model UserCreationRequest {
 // ─── PRODUCTS ────────────────────────────────────────────────────────────────
 
 model Product {
-  id           String   @id @default(cuid())
-  name         String
-  slug         String   @unique
-  description  String?  @db.Text
-  category     String
-  subcategory  String?
-  basePrice    Decimal  @default(0) @db.Decimal(10, 2)
-  images       String[]
-  ingredients  String?  @db.Text
-  benefits     String?  @db.Text
-  howItWorks   String?  @db.Text
-  howToUse     String?  @db.Text
-  generalInfo  String?  @db.Text
-  mkUrl        String?
-  sku          String?
-  active       Boolean  @default(true)
-  discontinued Boolean  @default(false)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id            String   @id @default(cuid())
+  name          String
+  slug          String   @unique
+  description   String?  @db.Text
+  category      String
+  subcategory   String?
+  purchasePrice Decimal  @default(0) @db.Decimal(10, 2)
+  salePrice     Decimal  @default(0) @db.Decimal(10, 2)
+  images        String[]
+  ingredients   String?  @db.Text
+  benefits      String?  @db.Text
+  howItWorks    String?  @db.Text
+  howToUse      String?  @db.Text
+  generalInfo   String?  @db.Text
+  mkUrl         String?
+  sku           String?
+  active        Boolean  @default(true)
+  discontinued  Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   inventoryItems  InventoryItem[]
   saleItems       SaleItem[]
   productRequests ProductRequest[]
-  priceOverrides  ConsultantPrice[]
 
   @@index([category])
   @@index([slug])
-}
-
-model ConsultantPrice {
-  id        String   @id @default(cuid())
-  userId    String
-  productId String
-  salePrice Decimal  @db.Decimal(10, 2)
-  updatedAt DateTime @updatedAt
-
-  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, productId])
 }
 
 // ─── INVENTORY ───────────────────────────────────────────────────────────────
@@ -305,13 +291,29 @@ model PublicLink {
 // ─── FOLLOW-UPS ──────────────────────────────────────────────────────────────
 
 enum FollowUpType {
+  // Legacy contact-mode values kept for back-compat until data migration runs.
+  // New rows should use purpose values only (DELIVERY+).
   CALL
   WHATSAPP
   VISIT
+  // Purpose-only values:
   DELIVERY
   POST_SALE
   BIRTHDAY
   PAYMENT
+  COLD_CONTACT
+  PROSPECTING
+  REACTIVATION
+  FACIAL
+  OTHER
+}
+
+enum ContactMode {
+  CALL
+  WHATSAPP
+  IN_PERSON
+  EMAIL
+  SMS
   OTHER
 }
 
@@ -325,6 +327,7 @@ model FollowUp {
   consultantId      String
   clientId          String?
   type              FollowUpType     @default(OTHER)
+  contactMode       ContactMode?
   scheduledDate     DateTime
   note              String?          @db.Text
   status            FollowUpStatus   @default(PENDING)

@@ -28,18 +28,27 @@ const INSTALLMENT_STATUS_CFG: Record<string, { label: string; cls: string }> = {
 
 type CartItem = {
   productId: string; name: string; images: string[];
-  quantity: number; unitPrice: number; discount: number;
+  quantity: number; unitPrice: number;
+  discountType: "AMOUNT" | "PERCENT";
+  discountValue: number;
 };
 type CatalogProduct = {
   id: string; name: string; images: string[]; category: string;
-  basePrice: number | string | { toNumber: () => number };
-  priceOverrides: { salePrice: number | string | { toNumber: () => number } }[];
+  salePrice: number | string | { toNumber: () => number };
+  stock: number;
 };
 
 function toNum(v: number | string | { toNumber: () => number } | undefined): number {
   if (!v) return 0;
   if (typeof v === "object" && "toNumber" in v) return v.toNumber();
   return Number(v);
+}
+
+function getItemDiscount(item: CartItem): number {
+  if (item.discountType === "PERCENT") {
+    return (item.quantity * item.unitPrice * item.discountValue) / 100;
+  }
+  return item.discountValue;
 }
 
 function getFirstImage(images: string[]): string {
@@ -391,6 +400,8 @@ function NewSaleModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: 
   const [firstDueDate, setFirstDueDate] = useState("");
   const [notes, setNotes] = useState("");
   const [step, setStep] = useState<"products" | "checkout">("products");
+  const [initialPaymentAmount, setInitialPaymentAmount] = useState("");
+  const [initialPaymentMethod, setInitialPaymentMethod] = useState<"CASH" | "TRANSFER" | "CARD" | "CREDIT">("CASH");
 
   const catRef = useRef<HTMLDivElement>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
@@ -414,19 +425,18 @@ function NewSaleModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: 
     return () => el.removeEventListener("scroll", checkScroll);
   }, [categories]);
 
-  const total = cart.reduce((s, i) => s + i.quantity * i.unitPrice - i.discount, 0);
+  const total = cart.reduce((s, i) => s + i.quantity * i.unitPrice - getItemDiscount(i), 0);
   const itemCount = cart.reduce((s, i) => s + i.quantity, 0);
 
   function getPrice(p: CatalogProduct): number {
-    const override = toNum(p.priceOverrides[0]?.salePrice);
-    return override > 0 ? override : toNum(p.basePrice);
+    return toNum(p.salePrice);
   }
   function addToCart(p: CatalogProduct) {
     const price = getPrice(p);
     setCart((prev) => {
       const existing = prev.find((i) => i.productId === p.id);
       if (existing) return prev.map((i) => i.productId === p.id ? { ...i, quantity: i.quantity + 1 } : i);
-      return [...prev, { productId: p.id, name: p.name, images: p.images, quantity: 1, unitPrice: price, discount: 0 }];
+      return [...prev, { productId: p.id, name: p.name, images: p.images, quantity: 1, unitPrice: price, discountType: "AMOUNT" as const, discountValue: 0 }];
     });
   }
   function updateQty(productId: string, delta: number) {
@@ -435,8 +445,11 @@ function NewSaleModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: 
   function updatePrice(productId: string, val: string) {
     setCart((prev) => prev.map((i) => i.productId === productId ? { ...i, unitPrice: parseFloat(val) || 0 } : i));
   }
-  function updateDiscount(productId: string, val: string) {
-    setCart((prev) => prev.map((i) => i.productId === productId ? { ...i, discount: parseFloat(val) || 0 } : i));
+  function updateDiscountValue(productId: string, val: string) {
+    setCart((prev) => prev.map((i) => i.productId === productId ? { ...i, discountValue: parseFloat(val) || 0 } : i));
+  }
+  function toggleDiscountType(productId: string) {
+    setCart((prev) => prev.map((i) => i.productId === productId ? { ...i, discountType: i.discountType === "AMOUNT" ? "PERCENT" : "AMOUNT", discountValue: 0 } : i));
   }
   function removeFromCart(productId: string) {
     setCart((prev) => prev.filter((i) => i.productId !== productId));
@@ -444,14 +457,16 @@ function NewSaleModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: 
   function handleSubmit() {
     if (cart.length === 0) return;
     if (paymentMode === "INSTALLMENTS" && (!firstDueDate || installmentCount < 2)) return;
+    const parsedInitial = parseFloat(initialPaymentAmount) || 0;
     create.mutate({
       clientId: clientId || undefined,
       clientName: clientName || undefined,
       paymentMethod,
       paymentMode,
       notes: notes || undefined,
-      items: cart.map((i) => ({ productId: i.productId, quantity: i.quantity, unitPrice: i.unitPrice, discount: i.discount })),
+      items: cart.map((i) => ({ productId: i.productId, quantity: i.quantity, unitPrice: i.unitPrice, discount: getItemDiscount(i) })),
       installmentsConfig: paymentMode === "INSTALLMENTS" ? { count: installmentCount, firstDueDate, frequency: installmentFrequency } : undefined,
+      initialPayment: paymentMode === "PENDING" && parsedInitial > 0 ? { amount: parsedInitial, paymentMethod: initialPaymentMethod } : undefined,
     });
   }
   const cartQtyMap = useMemo(() => {
@@ -527,13 +542,30 @@ function NewSaleModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: 
                 {catalog?.products.map((p) => {
                   const price = getPrice(p as any);
                   const inCart = cartQtyMap[p.id] ?? 0;
+                  const stock = (p as any).stock as number;
+                  const outOfStock = stock === 0;
+                  const lowStock = !outOfStock && stock <= 2;
                   return (
-                    <button key={p.id} type="button" onClick={() => addToCart(p as any)}
-                      className={`relative flex flex-col items-center bg-white rounded-2xl p-2.5 border-2 transition-all duration-150 text-left hover:shadow-md active:scale-95 ${inCart > 0 ? "border-mk-pink shadow-sm shadow-pink-100" : "border-transparent hover:border-pink-100"}`}>
-                      {inCart > 0 && (
+                    <button key={p.id} type="button"
+                      onClick={() => !outOfStock && addToCart(p as any)}
+                      disabled={outOfStock}
+                      className={`relative flex flex-col items-center rounded-2xl p-2.5 border-2 transition-all duration-150 text-left ${
+                        outOfStock
+                          ? "bg-gray-50 border-gray-100 opacity-60 cursor-not-allowed"
+                          : inCart > 0
+                            ? "bg-white border-mk-pink shadow-sm shadow-pink-100 hover:shadow-md active:scale-95"
+                            : "bg-white border-transparent hover:border-pink-100 hover:shadow-md active:scale-95"
+                      }`}>
+                      {inCart > 0 && !outOfStock && (
                         <span className="absolute top-2 right-2 w-5 h-5 bg-mk-pink text-white text-[10px] font-bold rounded-full flex items-center justify-center z-10">{inCart}</span>
                       )}
-                      <div className="w-full aspect-square rounded-xl overflow-hidden bg-gradient-to-br from-pink-50 to-rose-50 mb-2">
+                      {outOfStock && (
+                        <span className="absolute top-2 right-2 text-[9px] font-bold bg-gray-200 text-gray-500 px-1.5 py-0.5 rounded-full z-10 uppercase tracking-wide">Sin stock</span>
+                      )}
+                      {lowStock && !inCart && (
+                        <span className="absolute top-2 left-2 text-[9px] font-bold bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded-full z-10">{stock}</span>
+                      )}
+                      <div className={`w-full aspect-square rounded-xl overflow-hidden mb-2 ${outOfStock ? "bg-gray-100 grayscale" : "bg-gradient-to-br from-pink-50 to-rose-50"}`}>
                         <img src={getFirstImage(p.images)} alt={p.name} loading="lazy" decoding="async"
                           className="w-full h-full object-cover"
                           onError={(e) => {
@@ -543,7 +575,7 @@ function NewSaleModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: 
                           }} />
                       </div>
                       <p className="text-xs font-semibold text-gray-800 leading-tight line-clamp-2 w-full mb-1">{p.name}</p>
-                      {price > 0 && <p className="text-xs font-bold text-mk-pink">{formatCurrency(price)}</p>}
+                      {price > 0 && <p className={`text-xs font-bold ${outOfStock ? "text-gray-400" : "text-mk-pink"}`}>{formatCurrency(price)}</p>}
                     </button>
                   );
                 })}
@@ -594,10 +626,31 @@ function NewSaleModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: 
                         </div>
                         <input type="number" min="0" step="0.01" value={item.unitPrice || ""} onChange={(e) => updatePrice(item.productId, e.target.value)}
                           className="flex-1 px-2 py-1.5 text-xs border-2 border-gray-200 rounded-xl bg-white focus:outline-none focus:border-mk-pink/50 font-semibold" placeholder="Precio" />
-                        <input type="number" min="0" step="0.01" value={item.discount || ""} onChange={(e) => updateDiscount(item.productId, e.target.value)}
-                          className="w-16 px-2 py-1.5 text-xs border-2 border-gray-200 rounded-xl bg-white focus:outline-none focus:border-amber-400/50 text-amber-600" placeholder="Desc." />
+                        <div className="flex items-center border-2 border-amber-200 rounded-xl overflow-hidden">
+                          <button
+                            type="button"
+                            onClick={() => toggleDiscountType(item.productId)}
+                            className="px-1.5 py-1.5 text-[10px] font-bold bg-amber-50 text-amber-600 hover:bg-amber-100 transition-colors border-r border-amber-200 flex-shrink-0">
+                            {item.discountType === "PERCENT" ? "%" : "$"}
+                          </button>
+                          <input
+                            type="number" min="0" step={item.discountType === "PERCENT" ? "1" : "0.01"}
+                            max={item.discountType === "PERCENT" ? "100" : undefined}
+                            value={item.discountValue || ""}
+                            onChange={(e) => updateDiscountValue(item.productId, e.target.value)}
+                            className="w-12 px-1.5 py-1.5 text-xs bg-white focus:outline-none text-amber-600"
+                            placeholder="0"
+                          />
+                        </div>
                       </div>
-                      <p className="text-right text-xs text-gray-400 mt-1.5">Subtotal: <strong className="text-gray-700">{formatCurrency(Math.max(0, item.quantity * item.unitPrice - item.discount))}</strong></p>
+                      <p className="text-right text-xs text-gray-400 mt-1.5">
+                        {getItemDiscount(item) > 0 && (
+                          <span className="text-amber-500 mr-1">
+                            -{item.discountType === "PERCENT" ? `${item.discountValue}%` : formatCurrency(item.discountValue)}
+                          </span>
+                        )}
+                        Subtotal: <strong className="text-gray-700">{formatCurrency(Math.max(0, item.quantity * item.unitPrice - getItemDiscount(item)))}</strong>
+                      </p>
                     </div>
                   ))}
                 </div>
@@ -671,12 +724,43 @@ function NewSaleModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: 
                   )}
                 </div>
 
+                {/* Initial payment for pending sales */}
+                {paymentMode === "PENDING" && (
+                  <div className="border border-emerald-100 bg-emerald-50/40 rounded-xl p-3 space-y-2">
+                    <label className="text-[10px] font-bold text-emerald-700 uppercase tracking-widest flex items-center gap-1.5">
+                      <Banknote size={10} /> Pago inicial (opcional)
+                    </label>
+                    <input
+                      type="number" min="0" step="0.01"
+                      value={initialPaymentAmount}
+                      onChange={(e) => setInitialPaymentAmount(e.target.value)}
+                      placeholder={`Máx. ${formatCurrency(Math.max(0, total))}`}
+                      className="w-full px-3 py-2 border-2 border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:border-emerald-400/60 font-semibold"
+                    />
+                    {parseFloat(initialPaymentAmount) > 0 && (
+                      <div className="grid grid-cols-4 gap-1">
+                        {(["CASH", "TRANSFER", "CARD", "CREDIT"] as const).map((m) => (
+                          <button key={m} type="button" onClick={() => setInitialPaymentMethod(m)}
+                            className={`flex items-center justify-center gap-0.5 px-1 py-1.5 rounded-lg border-2 text-[10px] font-semibold transition-all ${initialPaymentMethod === m ? "border-emerald-400 bg-emerald-50 text-emerald-700" : "border-gray-100 text-gray-500 hover:border-gray-200"}`}>
+                            <span>{PAYMENT_ICONS[m]}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} placeholder="Notas (opcional)"
                   className="w-full px-3 py-2 border-2 border-gray-100 rounded-xl text-sm bg-gray-50 focus:outline-none focus:border-mk-pink/50 resize-none" />
                 <div className="bg-pink-50 rounded-2xl px-4 py-3 flex items-center justify-between border border-pink-100">
                   <div>
                     <p className="text-xs text-gray-500">{itemCount} producto{itemCount !== 1 ? "s" : ""}</p>
                     <p className="text-xl font-bold text-mk-pink">{formatCurrency(Math.max(0, total))}</p>
+                    {paymentMode === "PENDING" && parseFloat(initialPaymentAmount) > 0 && (
+                      <p className="text-[11px] text-emerald-600 font-semibold">
+                        Anticipo: {formatCurrency(Math.min(parseFloat(initialPaymentAmount), total))} · Pendiente: {formatCurrency(Math.max(0, total - Math.min(parseFloat(initialPaymentAmount), total)))}
+                      </p>
+                    )}
                   </div>
                   <button onClick={handleSubmit} disabled={create.isPending || !canSubmit}
                     className="flex items-center gap-2 px-5 py-2.5 bg-mk-pink text-white font-bold rounded-xl disabled:opacity-60 hover:bg-pink-700 text-sm">

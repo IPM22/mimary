@@ -112,6 +112,12 @@ export const salesRouter = router({
             frequency: z.enum(["MONTHLY", "BIWEEKLY"]).default("MONTHLY"),
           })
           .optional(),
+        initialPayment: z
+          .object({
+            amount: z.number().positive(),
+            paymentMethod: z.enum(["CASH", "TRANSFER", "CARD", "CREDIT"]),
+          })
+          .optional(),
         notes: z.string().optional(),
         items: z.array(saleItemSchema).min(1),
         requestId: z.string().optional(),
@@ -162,8 +168,13 @@ export const salesRouter = router({
           });
         }
 
-        const saleStatus = input.paymentMode === "PAID" ? "PAID" : "PENDING";
-        const paidAmount = input.paymentMode === "PAID" ? total : 0;
+        const initPayAmt = input.paymentMode === "PAID"
+          ? total
+          : input.paymentMode === "PENDING" && input.initialPayment
+            ? Math.min(input.initialPayment.amount, total)
+            : 0;
+
+        const saleStatus = initPayAmt >= total - 0.02 ? "PAID" : "PENDING";
 
         const sale = await tx.sale.create({
           data: {
@@ -171,7 +182,7 @@ export const salesRouter = router({
             clientId: input.clientId || null,
             clientName: input.clientName || null,
             total,
-            paidAmount,
+            paidAmount: initPayAmt,
             paymentMethod: input.paymentMethod,
             status: saleStatus,
             notes: input.notes,
@@ -189,6 +200,16 @@ export const salesRouter = router({
           },
           include: { items: true },
         });
+
+        if (input.paymentMode === "PENDING" && input.initialPayment && input.initialPayment.amount > 0) {
+          await tx.salePayment.create({
+            data: {
+              saleId: sale.id,
+              amount: initPayAmt,
+              paymentMethod: input.initialPayment.paymentMethod,
+            },
+          });
+        }
 
         if (input.paymentMode === "INSTALLMENTS" && input.installmentsConfig) {
           const { count, firstDueDate, frequency } = input.installmentsConfig;

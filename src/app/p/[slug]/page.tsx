@@ -34,14 +34,11 @@ export default async function PublicProductPage({ params }: Props) {
   });
   if (!link) notFound();
 
-  const [product, consultant, priceOverride, catalogInventory] = await Promise.all([
+  const [product, consultant, catalogInventory] = await Promise.all([
     prisma.product.findUnique({ where: { id: link.productId } }),
     prisma.user.findUnique({
       where: { id: link.consultantId },
       select: { id: true, name: true, avatar: true, phone: true },
-    }),
-    prisma.consultantPrice.findUnique({
-      where: { userId_productId: { userId: link.consultantId, productId: link.productId } },
     }),
     prisma.inventoryItem.findMany({
       where: { userId: link.consultantId, quantity: { gt: 0 }, productId: { not: link.productId } },
@@ -52,15 +49,6 @@ export default async function PublicProductPage({ params }: Props) {
   ]);
 
   if (!product || !consultant) notFound();
-
-  const catalogProductIds = catalogInventory.map((i) => i.productId);
-  const catalogPrices =
-    catalogProductIds.length > 0
-      ? await prisma.consultantPrice.findMany({
-          where: { userId: link.consultantId, productId: { in: catalogProductIds } },
-        })
-      : [];
-  const priceMap = new Map(catalogPrices.map((p) => [p.productId, Number(p.salePrice)]));
 
   const catalogItems = catalogInventory.map((item) => ({
     product: {
@@ -76,7 +64,7 @@ export default async function PublicProductPage({ params }: Props) {
       generalInfo: item.product.generalInfo,
       ingredients: item.product.ingredients,
     },
-    price: priceMap.get(item.productId) ?? null,
+    price: Number(item.product.salePrice) > 0 ? Number(item.product.salePrice) : null,
   }));
 
   return (
@@ -95,7 +83,7 @@ export default async function PublicProductPage({ params }: Props) {
         generalInfo: product.generalInfo,
         ingredients: product.ingredients,
       }}
-      mainProductPrice={priceOverride ? Number(priceOverride.salePrice) : null}
+      mainProductPrice={Number(product.salePrice) > 0 ? Number(product.salePrice) : null}
       catalogItems={catalogItems}
     />
   );

@@ -57,6 +57,36 @@ export const goalsRouter = router({
       });
     }),
 
+  update: directoraProcedure
+    .input(
+      z.object({
+        id: z.string(),
+        targetUserId: z.string().nullable().optional(),
+        type: z.enum(["SALES_AMOUNT", "NEW_CLIENTS", "PRODUCT_UNITS", "GROUP_SALES"]).optional(),
+        period: z.enum(["WEEKLY", "MONTHLY", "QUARTERLY"]).optional(),
+        targetValue: z.number().positive().optional(),
+        description: z.string().optional(),
+        startDate: z.string().optional(),
+        endDate: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { id, startDate, endDate, ...rest } = input;
+      const existing = await ctx.prisma.goal.findUnique({ where: { id } });
+      if (!existing) throw new TRPCError({ code: "NOT_FOUND" });
+      if (existing.directoraId !== ctx.user.id && ctx.user.role !== "ADMIN") {
+        throw new TRPCError({ code: "FORBIDDEN" });
+      }
+      return ctx.prisma.goal.update({
+        where: { id },
+        data: {
+          ...rest,
+          ...(startDate && { startDate: new Date(startDate + "T12:00:00.000Z") }),
+          ...(endDate && { endDate: new Date(endDate + "T23:59:59.999Z") }),
+        },
+      });
+    }),
+
   delete: directoraProcedure
     .input(z.object({ id: z.string() }))
     .mutation(async ({ ctx, input }) => {

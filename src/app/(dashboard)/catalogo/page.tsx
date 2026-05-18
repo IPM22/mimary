@@ -3,7 +3,7 @@
 import { useState, useCallback } from "react";
 import { trpc } from "@/lib/trpc/client";
 import { formatCurrency } from "@/lib/utils";
-import { Search, X, Link2, DollarSign, ChevronLeft, ChevronRight, Check, Copy, Sparkles } from "lucide-react";
+import { Search, X, Link2, DollarSign, ChevronLeft, ChevronRight, Check, Copy, Settings2 } from "lucide-react";
 
 // ── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -13,9 +13,9 @@ type Product = {
   images: string[];
   category: string;
   subcategory: string | null;
-  basePrice: number | string | { toNumber: () => number };
+  purchasePrice: number | string | { toNumber: () => number };
+  salePrice: number | string | { toNumber: () => number };
   discontinued: boolean;
-  priceOverrides: { salePrice: number | string | { toNumber: () => number } }[];
   description?: string | null;
   benefits?: string | null;
   howItWorks?: string | null;
@@ -34,7 +34,6 @@ function toNum(v: number | string | { toNumber: () => number } | undefined): num
   return Number(v);
 }
 
-// Filtra URLs que son logos/SVGs/imágenes de navegación capturadas por error
 function getProductImages(images: string[]): string[] {
   return images.filter((url) => {
     if (!url) return false;
@@ -108,15 +107,17 @@ function ProductImage({
 function ProductCard({
   product,
   onClick,
-  onSetPrice,
+  onSetPrices,
   onGenerateLink,
+  canEditPrices,
 }: {
   product: Product;
   onClick: () => void;
-  onSetPrice: (e: React.MouseEvent) => void;
+  onSetPrices: (e: React.MouseEvent) => void;
   onGenerateLink: (e: React.MouseEvent) => void;
+  canEditPrices: boolean;
 }) {
-  const salePrice = toNum(product.priceOverrides[0]?.salePrice);
+  const salePrice = toNum(product.salePrice);
 
   return (
     <article
@@ -139,13 +140,6 @@ function ProductCard({
             </span>
           </div>
         )}
-        {salePrice > 0 && (
-          <div className="absolute top-2 right-2">
-            <span className="text-[11px] font-bold bg-mk-pink text-white px-2 py-0.5 rounded-full">
-              {formatCurrency(salePrice)}
-            </span>
-          </div>
-        )}
       </div>
 
       {/* Info */}
@@ -153,21 +147,26 @@ function ProductCard({
         <p className="text-[10px] font-semibold text-mk-pink/70 uppercase tracking-widest mb-0.5 truncate">
           {product.subcategory ?? product.category}
         </p>
-        <h3 className="text-sm font-semibold text-gray-900 leading-snug line-clamp-2 mb-3 min-h-[2.5rem]">
+        <h3 className="text-sm font-semibold text-gray-900 leading-snug line-clamp-2 mb-1 min-h-[2.5rem]">
           {product.name}
         </h3>
+        <p className={`text-sm font-bold mb-2.5 ${salePrice > 0 ? "text-mk-pink" : "text-gray-300"}`}>
+          {salePrice > 0 ? formatCurrency(salePrice) : "Sin precio"}
+        </p>
 
         {/* Acciones */}
         <div className="flex gap-1.5">
-          <button
-            onClick={onSetPrice}
-            className="flex-1 flex items-center justify-center gap-1 py-1.5 text-[11px] font-medium
-              border border-gray-200 rounded-lg hover:border-mk-pink hover:text-mk-pink
-              transition-colors duration-150"
-          >
-            <DollarSign size={11} />
-            Precio
-          </button>
+          {canEditPrices && (
+            <button
+              onClick={onSetPrices}
+              className="flex-1 flex items-center justify-center gap-1 py-1.5 text-[11px] font-medium
+                border border-gray-200 rounded-lg hover:border-mk-pink hover:text-mk-pink
+                transition-colors duration-150"
+            >
+              <Settings2 size={11} />
+              Precios
+            </button>
+          )}
           <button
             onClick={onGenerateLink}
             className="flex-1 flex items-center justify-center gap-1 py-1.5 text-[11px] font-medium
@@ -184,7 +183,6 @@ function ProductCard({
 }
 
 // ── Formateador de texto ──────────────────────────────────────────────────────
-// Convierte texto plano con bullets (•, *, -) y saltos de línea en JSX legible
 
 function FormattedText({ text, className = "" }: { text: string; className?: string }) {
   const paragraphs = text.split(/\n{2,}/).filter(Boolean);
@@ -270,21 +268,21 @@ function Section({
 function ProductModal({
   product,
   onClose,
-  onSetPrice,
+  onSetPrices,
   onGenerateLink,
+  canEditPrices,
 }: {
   product: Product | null;
   onClose: () => void;
-  onSetPrice: () => void;
+  onSetPrices: () => void;
   onGenerateLink: () => void;
+  canEditPrices: boolean;
 }) {
   const filtered = product ? getProductImages(product.images) : [];
   const [imgIdx, setImgIdx] = useState(0);
   const [imgFailed, setImgFailed] = useState(false);
-  const salePrice = product ? toNum(product.priceOverrides[0]?.salePrice) : 0;
-  const basePrice = product ? toNum(product.basePrice) : 0;
+  const salePrice = product ? toNum(product.salePrice) : 0;
 
-  // Reset al cambiar producto
   useState(() => { setImgIdx(0); setImgFailed(false); });
 
   if (!product) return null;
@@ -382,9 +380,9 @@ function ProductModal({
 
             {/* Precio + SKU */}
             <div className="px-5 py-4 border-t border-gray-100 bg-white/70 flex-shrink-0 hidden md:block">
-              {(salePrice > 0 || basePrice > 0) && (
+              {salePrice > 0 && (
                 <p className="text-2xl font-bold text-mk-pink mb-0.5">
-                  {formatCurrency(salePrice > 0 ? salePrice : basePrice)}
+                  {formatCurrency(salePrice)}
                 </p>
               )}
               {product.sku && (
@@ -399,9 +397,9 @@ function ProductModal({
 
               {/* Precio mobile */}
               <div className="md:hidden">
-                {(salePrice > 0 || basePrice > 0) && (
+                {salePrice > 0 && (
                   <p className="text-xl font-bold text-mk-pink">
-                    {formatCurrency(salePrice > 0 ? salePrice : basePrice)}
+                    {formatCurrency(salePrice)}
                   </p>
                 )}
                 {product.sku && <p className="text-xs text-gray-400 mt-0.5">SKU: {product.sku}</p>}
@@ -438,14 +436,16 @@ function ProductModal({
 
         {/* ── Footer con acciones ── */}
         <div className="border-t border-gray-100 px-6 py-4 flex gap-3 flex-shrink-0 bg-white">
-          <button
-            onClick={onSetPrice}
-            className="flex items-center justify-center gap-2 px-5 py-2.5 border-2 border-gray-200
-              rounded-xl text-sm font-semibold hover:border-mk-pink hover:text-mk-pink transition-colors"
-          >
-            <DollarSign size={14} />
-            {salePrice > 0 ? "Editar precio" : "Poner precio"}
-          </button>
+          {canEditPrices && (
+            <button
+              onClick={onSetPrices}
+              className="flex items-center justify-center gap-2 px-5 py-2.5 border-2 border-gray-200
+                rounded-xl text-sm font-semibold hover:border-mk-pink hover:text-mk-pink transition-colors"
+            >
+              <Settings2 size={14} />
+              {salePrice > 0 ? "Editar precios" : "Definir precios"}
+            </button>
+          )}
           <button
             onClick={onGenerateLink}
             className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-mk-pink
@@ -471,9 +471,13 @@ export default function CatalogoPage() {
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Product | null>(null);
   const [linkModal, setLinkModal] = useState<{ slug: string; url: string } | null>(null);
-  const [priceModal, setPriceModal] = useState<{ id: string; current: number } | null>(null);
-  const [newPrice, setNewPrice] = useState("");
+  const [pricesModal, setPricesModal] = useState<{ id: string; purchasePrice: number; salePrice: number } | null>(null);
+  const [newPurchasePrice, setNewPurchasePrice] = useState("");
+  const [newSalePrice, setNewSalePrice] = useState("");
   const [copied, setCopied] = useState(false);
+
+  const { data: me } = trpc.auth.me.useQuery();
+  const canEditPrices = me?.role === "ADMIN" || me?.role === "DIRECTORA";
 
   const { data: categories } = trpc.catalog.categories.useQuery();
   const { data, isLoading } = trpc.catalog.list.useQuery(
@@ -485,8 +489,8 @@ export default function CatalogoPage() {
     onSuccess: (data) => setLinkModal(data),
   });
 
-  const setPrice = trpc.catalog.setPrice.useMutation({
-    onSuccess: () => { setPriceModal(null); setNewPrice(""); },
+  const setPrices = trpc.catalog.setPrices.useMutation({
+    onSuccess: () => { setPricesModal(null); setNewPurchasePrice(""); setNewSalePrice(""); },
   });
 
   const handleCopyLink = () => {
@@ -496,10 +500,14 @@ export default function CatalogoPage() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const openPriceModal = useCallback((product: Product) => {
-    const current = toNum(product.priceOverrides[0]?.salePrice);
-    setPriceModal({ id: product.id, current });
-    setNewPrice(current > 0 ? String(current) : "");
+  const openPricesModal = useCallback((product: Product) => {
+    setPricesModal({
+      id: product.id,
+      purchasePrice: toNum(product.purchasePrice),
+      salePrice: toNum(product.salePrice),
+    });
+    setNewPurchasePrice(toNum(product.purchasePrice) > 0 ? String(toNum(product.purchasePrice)) : "");
+    setNewSalePrice(toNum(product.salePrice) > 0 ? String(toNum(product.salePrice)) : "");
   }, []);
 
   const openLinkModal = useCallback((product: Product) => {
@@ -513,8 +521,9 @@ export default function CatalogoPage() {
         <ProductModal
           product={selected}
           onClose={() => setSelected(null)}
-          onSetPrice={() => { if (selected) openPriceModal(selected); }}
+          onSetPrices={() => { if (selected) openPricesModal(selected); }}
           onGenerateLink={() => { if (selected) openLinkModal(selected); }}
+          canEditPrices={canEditPrices}
         />
       )}
 
@@ -612,8 +621,9 @@ export default function CatalogoPage() {
                 key={product.id}
                 product={product as any}
                 onClick={() => setSelected(product as any)}
-                onSetPrice={(e) => { e.stopPropagation(); openPriceModal(product as any); }}
+                onSetPrices={(e) => { e.stopPropagation(); openPricesModal(product as any); }}
                 onGenerateLink={(e) => { e.stopPropagation(); openLinkModal(product as any); }}
+                canEditPrices={canEditPrices}
               />
             ))}
           </div>
@@ -677,40 +687,83 @@ export default function CatalogoPage() {
         </div>
       )}
 
-      {/* Modal: precio */}
-      {priceModal && (
+      {/* Modal: precios (solo admin/directora) */}
+      {pricesModal && canEditPrices && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center z-[60] p-4">
           <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl">
-            <h2 className="font-bold text-gray-900 text-lg mb-1">Precio de venta</h2>
-            <p className="text-gray-400 text-sm mb-5">Pesos dominicanos (DOP)</p>
-            <div className="relative mb-5">
-              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-semibold text-sm">RD$</span>
-              <input
-                type="number"
-                value={newPrice}
-                onChange={(e) => setNewPrice(e.target.value)}
-                placeholder="0.00"
-                autoFocus
-                className="w-full pl-12 pr-4 py-3 border-2 border-gray-200 rounded-xl text-base font-semibold
-                  focus:outline-none focus:border-mk-pink transition-colors"
-                min="0"
-                step="0.01"
-              />
+            <h2 className="font-bold text-gray-900 text-lg mb-1">Definir precios</h2>
+            <p className="text-gray-400 text-sm mb-5">Pesos dominicanos (DOP) · aplica para todas las consultoras</p>
+
+            <div className="space-y-4 mb-5">
+              <div>
+                <label className="text-xs font-semibold text-gray-500 uppercase tracking-widest block mb-1.5">
+                  Precio de compra
+                </label>
+                <p className="text-[11px] text-gray-400 mb-2">Lo que pagamos a Mary Kay (costo interno)</p>
+                <div className="relative">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-semibold text-sm">RD$</span>
+                  <input
+                    type="number"
+                    value={newPurchasePrice}
+                    onChange={(e) => setNewPurchasePrice(e.target.value)}
+                    placeholder="0.00"
+                    className="w-full pl-12 pr-4 py-3 border-2 border-gray-200 rounded-xl text-base font-semibold
+                      focus:outline-none focus:border-gray-400 transition-colors"
+                    min="0"
+                    step="0.01"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-mk-pink uppercase tracking-widest block mb-1.5">
+                  Precio de venta
+                </label>
+                <p className="text-[11px] text-gray-400 mb-2">Lo que ven y pagan las clientas</p>
+                <div className="relative">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-semibold text-sm">RD$</span>
+                  <input
+                    type="number"
+                    value={newSalePrice}
+                    onChange={(e) => setNewSalePrice(e.target.value)}
+                    placeholder="0.00"
+                    autoFocus
+                    className="w-full pl-12 pr-4 py-3 border-2 border-gray-200 rounded-xl text-base font-semibold
+                      focus:outline-none focus:border-mk-pink transition-colors"
+                    min="0"
+                    step="0.01"
+                  />
+                </div>
+              </div>
+
+              {newPurchasePrice && newSalePrice && parseFloat(newSalePrice) > 0 && parseFloat(newPurchasePrice) > 0 && (
+                <div className="bg-emerald-50 border border-emerald-100 rounded-xl px-4 py-2.5 flex items-center justify-between">
+                  <span className="text-xs text-emerald-600 font-medium">Ganancia por unidad</span>
+                  <span className="text-sm font-bold text-emerald-700">
+                    {formatCurrency(parseFloat(newSalePrice) - parseFloat(newPurchasePrice))}
+                  </span>
+                </div>
+              )}
             </div>
+
             <div className="flex gap-2">
               <button
                 onClick={() => {
-                  if (!priceModal || !newPrice) return;
-                  setPrice.mutate({ productId: priceModal.id, salePrice: parseFloat(newPrice) });
+                  if (!pricesModal) return;
+                  setPrices.mutate({
+                    productId: pricesModal.id,
+                    purchasePrice: parseFloat(newPurchasePrice) || 0,
+                    salePrice: parseFloat(newSalePrice) || 0,
+                  });
                 }}
-                disabled={setPrice.isPending || !newPrice}
+                disabled={setPrices.isPending || (!newSalePrice && !newPurchasePrice)}
                 className="flex-1 py-3 bg-mk-pink text-white rounded-xl text-sm font-semibold
                   disabled:opacity-40 hover:bg-pink-700 transition-colors"
               >
-                {setPrice.isPending ? "Guardando..." : "Guardar precio"}
+                {setPrices.isPending ? "Guardando..." : "Guardar precios"}
               </button>
               <button
-                onClick={() => setPriceModal(null)}
+                onClick={() => setPricesModal(null)}
                 className="px-4 py-3 border border-gray-200 rounded-xl text-sm hover:bg-gray-50 transition-colors"
               >
                 Cancelar

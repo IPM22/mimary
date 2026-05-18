@@ -12,6 +12,7 @@
     "enrich": "tsx scripts/enrich.ts",
     "cleanup": "tsx scripts/cleanup.ts",
     "seed": "tsx scripts/seed.ts",
+    "seed:prices": "tsx scripts/seed-prices.ts",
     "db:push": "prisma db push",
     "db:studio": "prisma studio",
     "db:generate": "prisma generate"

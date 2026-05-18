@@ -8,7 +8,7 @@ import {
   ArrowLeft, Phone, Mail, MapPin, Cake, Tag, Sparkles,
   ShoppingBag, CalendarCheck, Pencil, X, Check, CheckCircle,
   MessageCircle, Package, Home, Clock, DollarSign, CreditCard,
-  ChevronDown, ChevronUp,
+  ChevronDown, ChevronUp, UserPlus,
 } from "lucide-react";
 
 const inputCls = "mt-1 w-full px-3 py-2.5 border-2 border-gray-100 rounded-xl text-sm focus:outline-none focus:border-mk-pink/50 transition-colors bg-gray-50 focus:bg-white";
@@ -35,11 +35,11 @@ const PAYMENT_ICONS: Record<string, string> = {
 
 const FOLLOWUP_ICONS: Record<string, React.ElementType> = {
   CALL: Phone, WHATSAPP: MessageCircle, VISIT: Home,
-  DELIVERY: Package, POST_SALE: CheckCircle, BIRTHDAY: Cake, PAYMENT: DollarSign, OTHER: Clock,
+  DELIVERY: Package, POST_SALE: CheckCircle, BIRTHDAY: Cake, PAYMENT: DollarSign, COLD_CONTACT: UserPlus, OTHER: Clock,
 };
 const FOLLOWUP_LABELS: Record<string, string> = {
   CALL: "Llamada", WHATSAPP: "WhatsApp", VISIT: "Visita",
-  DELIVERY: "Entrega", POST_SALE: "Post-venta", BIRTHDAY: "Cumpleaños", PAYMENT: "Pago de cuota", OTHER: "Otro",
+  DELIVERY: "Entrega", POST_SALE: "Post-venta", BIRTHDAY: "Cumpleaños", PAYMENT: "Pago de cuota", COLD_CONTACT: "Contacto en frío", OTHER: "Otro",
 };
 
 // ── Add Payment Modal ────────────────────────────────────────────────────────

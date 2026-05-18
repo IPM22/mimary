@@ -12,21 +12,13 @@ export const publicLinksRouter = router({
 
       if (!link) throw new TRPCError({ code: "NOT_FOUND" });
 
-      const [product, consultant, price] = await Promise.all([
+      const [product, consultant] = await Promise.all([
         ctx.prisma.product.findUnique({
           where: { id: link.productId },
         }),
         ctx.prisma.user.findUnique({
           where: { id: link.consultantId },
           select: { id: true, name: true, avatar: true, phone: true },
-        }),
-        ctx.prisma.consultantPrice.findUnique({
-          where: {
-            userId_productId: {
-              userId: link.consultantId,
-              productId: link.productId,
-            },
-          },
         }),
       ]);
 
@@ -35,7 +27,7 @@ export const publicLinksRouter = router({
       return {
         product,
         consultant,
-        salePrice: price ? Number(price.salePrice) : null,
+        salePrice: Number(product.salePrice) > 0 ? Number(product.salePrice) : null,
         linkId: link.id,
       };
     }),

@@ -38,16 +38,18 @@ export const catalogRouter = router({
           skip,
           take: limit,
           orderBy: { name: "asc" },
-          include: {
-            priceOverrides: {
-              where: { userId: ctx.user.id },
-            },
-          },
         }),
         ctx.prisma.product.count({ where }),
       ]);
 
-      return { products, total, pages: Math.ceil(total / limit) };
+      const inventoryItems = await ctx.prisma.inventoryItem.findMany({
+        where: { userId: ctx.user.id, productId: { in: products.map((p) => p.id) } },
+        select: { productId: true, quantity: true },
+      });
+      const stockMap = Object.fromEntries(inventoryItems.map((i) => [i.productId, i.quantity]));
+      const productsWithStock = products.map((p) => ({ ...p, stock: stockMap[p.id] ?? 0 }));
+
+      return { products: productsWithStock, total, pages: Math.ceil(total / limit) };
     }),
 
   bySlug: protectedProcedure
@@ -55,11 +57,6 @@ export const catalogRouter = router({
     .query(async ({ ctx, input }) => {
       const product = await ctx.prisma.product.findUnique({
         where: { slug: input.slug },
-        include: {
-          priceOverrides: {
-            where: { userId: ctx.user.id },
-          },
-        },
       });
       if (!product) throw new TRPCError({ code: "NOT_FOUND" });
       return product;
@@ -82,25 +79,20 @@ export const catalogRouter = router({
     }));
   }),
 
-  setPrice: protectedProcedure
+  // Admin/directora: establece precio de compra y precio de venta global del producto
+  setPrices: directoraProcedure
     .input(
       z.object({
         productId: z.string(),
-        salePrice: z.number().positive(),
+        purchasePrice: z.number().min(0),
+        salePrice: z.number().min(0),
       })
     )
     .mutation(async ({ ctx, input }) => {
-      return ctx.prisma.consultantPrice.upsert({
-        where: {
-          userId_productId: {
-            userId: ctx.user.id,
-            productId: input.productId,
-          },
-        },
-        update: { salePrice: input.salePrice },
-        create: {
-          userId: ctx.user.id,
-          productId: input.productId,
+      return ctx.prisma.product.update({
+        where: { id: input.productId },
+        data: {
+          purchasePrice: input.purchasePrice,
           salePrice: input.salePrice,
         },
       });
@@ -141,7 +133,8 @@ export const catalogRouter = router({
         category: z.string(),
         subcategory: z.string().optional(),
         description: z.string().optional(),
-        basePrice: z.number().min(0).default(0),
+        purchasePrice: z.number().min(0).default(0),
+        salePrice: z.number().min(0).default(0),
         images: z.array(z.string()).default([]),
         ingredients: z.string().optional(),
         benefits: z.string().optional(),
@@ -164,7 +157,8 @@ export const catalogRouter = router({
         category: z.string().optional(),
         subcategory: z.string().optional(),
         description: z.string().optional(),
-        basePrice: z.number().min(0).optional(),
+        purchasePrice: z.number().min(0).optional(),
+        salePrice: z.number().min(0).optional(),
         images: z.array(z.string()).optional(),
         ingredients: z.string().optional(),
         benefits: z.string().optional(),

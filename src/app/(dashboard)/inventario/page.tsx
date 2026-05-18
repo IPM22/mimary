@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { trpc } from "@/lib/trpc/client";
-import { formatDate } from "@/lib/utils";
+import { formatDate, formatCurrency } from "@/lib/utils";
 import {
   Plus, AlertTriangle, TrendingDown, TrendingUp, Minus, X, Package,
   Search, Check, ChevronLeft, ChevronRight, CalendarClock, Trash2,
@@ -103,7 +103,7 @@ function AdjustModal({ item, onClose, onSuccess }: {
 }
 
 // ── Add Product Modal ─────────────────────────────────────────────────────────
-type CatalogProduct = { id: string; name: string; images: string[]; category: string; basePrice: number | string | { toNumber: () => number } };
+type CatalogProduct = { id: string; name: string; images: string[]; category: string; salePrice: number | string | { toNumber: () => number } };
 type Batch = { quantity: number; expiresAt: string };
 
 function AddProductModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
@@ -198,7 +198,7 @@ function AddProductModal({ onClose, onSuccess }: { onClose: () => void; onSucces
                 {isSelected && <div className="absolute top-2 right-2 w-6 h-6 rounded-full bg-mk-pink flex items-center justify-center shadow-md"><Check size={12} className="text-white" strokeWidth={3} /></div>}
                 <div className="p-2.5">
                   <p className="text-xs font-semibold text-gray-900 line-clamp-2 leading-tight">{p.name}</p>
-                  {toNum(p.basePrice) > 0 && <p className="text-xs font-bold text-mk-pink mt-1">${toNum(p.basePrice).toFixed(2)}</p>}
+                  {toNum(p.salePrice) > 0 && <p className="text-xs font-bold text-mk-pink mt-1">{formatCurrency(toNum(p.salePrice))}</p>}
                 </div>
               </button>
             );

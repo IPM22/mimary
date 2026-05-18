@@ -250,7 +250,7 @@ async function main() {
             ingredients:  data.ingredients  || null,
             howItWorks:   data.howItWorks   || null,
             howToUse:     data.howToUse     || null,
-            ...(data.price > 0 ? { basePrice: data.price } : {}),
+            ...(data.price > 0 ? { salePrice: data.price } : {}),
             ...(needsImages ? { images: data.images } : {}),
           },
         });
@@ -295,7 +295,7 @@ async function main() {
     console.log(`   ✗ Errores: ${errs}`);
 
     const remaining = await prisma.product.count({ where: { description: null } });
-    const withPrice = await prisma.product.count({ where: { basePrice: { gt: 0 } } });
+    const withPrice = await prisma.product.count({ where: { salePrice: { gt: 0 } } });
     console.log(`\n📊 Estado final: ${remaining} sin descripción, ${withPrice}/125 con precio\n`);
 
   } finally {
