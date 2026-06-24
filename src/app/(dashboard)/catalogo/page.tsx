@@ -3,7 +3,7 @@
 import { useState, useCallback } from "react";
 import { trpc } from "@/lib/trpc/client";
 import { formatCurrency } from "@/lib/utils";
-import { Search, X, Link2, DollarSign, ChevronLeft, ChevronRight, Check, Copy, Settings2 } from "lucide-react";
+import { Search, X, Link2, ChevronLeft, ChevronRight, ChevronDown, Check, Copy, Settings2, Sparkles } from "lucide-react";
 
 // ── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -222,40 +222,30 @@ function FormattedText({ text, className = "" }: { text: string; className?: str
 
 // ── Sección de contenido ──────────────────────────────────────────────────────
 
+// Acordeón colapsable de un solo color — legible y consistente con la tienda
 function Section({
   label,
   text,
-  color = "gray",
-  collapsible = false,
+  defaultOpen = false,
 }: {
   label: string;
   text: string;
-  color?: "pink" | "amber" | "blue" | "gray";
-  collapsible?: boolean;
+  defaultOpen?: boolean;
 }) {
-  const [open, setOpen] = useState(!collapsible);
-  const colorMap = {
-    pink:  { bg: "bg-pink-50",  border: "border-pink-100",  label: "text-mk-pink" },
-    amber: { bg: "bg-amber-50", border: "border-amber-100", label: "text-amber-700" },
-    blue:  { bg: "bg-blue-50",  border: "border-blue-100",  label: "text-blue-700" },
-    gray:  { bg: "bg-gray-50",  border: "border-gray-100",  label: "text-gray-500" },
-  };
-  const c = colorMap[color];
+  const [open, setOpen] = useState(defaultOpen);
 
   return (
-    <div className={`rounded-2xl border ${c.bg} ${c.border} overflow-hidden`}>
+    <div className="rounded-2xl border border-gray-200 bg-white overflow-hidden">
       <button
         type="button"
-        onClick={() => collapsible && setOpen((v) => !v)}
-        className={`w-full flex items-center justify-between px-4 py-3 ${collapsible ? "cursor-pointer" : "cursor-default"}`}
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-gray-50 transition-colors"
       >
-        <span className={`text-[11px] font-bold uppercase tracking-widest ${c.label}`}>{label}</span>
-        {collapsible && (
-          <ChevronRight size={13} className={`${c.label} transition-transform duration-200 ${open ? "rotate-90" : ""}`} />
-        )}
+        <span className="text-[11px] font-bold uppercase tracking-widest text-gray-500">{label}</span>
+        <ChevronDown size={15} className={`text-gray-400 transition-transform duration-200 ${open ? "rotate-180" : ""}`} />
       </button>
       {open && (
-        <div className={`px-4 pb-4 text-gray-700`}>
+        <div className="px-4 pb-4 text-gray-700">
           <FormattedText text={text} />
         </div>
       )}
@@ -411,24 +401,24 @@ function ProductModal({
                 </div>
               )}
 
-              {product.generalInfo && (
-                <Section label="Información general" text={product.generalInfo} color="gray" />
-              )}
-
               {product.benefits && (
-                <Section label="Ingredientes clave" text={product.benefits} color="pink" />
-              )}
-
-              {product.howItWorks && (
-                <Section label="Cómo funciona" text={product.howItWorks} color="amber" />
+                <Section label="Ingredientes clave" text={product.benefits} defaultOpen />
               )}
 
               {product.howToUse && (
-                <Section label="Cómo aplicar" text={product.howToUse} color="blue" />
+                <Section label="Cómo aplicar" text={product.howToUse} />
+              )}
+
+              {product.howItWorks && (
+                <Section label="Cómo funciona" text={product.howItWorks} />
+              )}
+
+              {product.generalInfo && (
+                <Section label="Información general" text={product.generalInfo} />
               )}
 
               {product.ingredients && (
-                <Section label="Lista completa de ingredientes" text={product.ingredients} color="gray" collapsible />
+                <Section label="Lista completa de ingredientes" text={product.ingredients} />
               )}
             </div>
           </div>
@@ -489,6 +479,10 @@ export default function CatalogoPage() {
     onSuccess: (data) => setLinkModal(data),
   });
 
+  const generateCatalogLink = trpc.catalog.generateCatalogLink.useMutation({
+    onSuccess: (data) => setLinkModal(data),
+  });
+
   const setPrices = trpc.catalog.setPrices.useMutation({
     onSuccess: () => { setPricesModal(null); setNewPurchasePrice(""); setNewSalePrice(""); },
   });
@@ -530,14 +524,22 @@ export default function CatalogoPage() {
       <div className="p-4 md:p-8 space-y-5">
 
         {/* Header */}
-        <div className="flex items-end justify-between">
+        <div className="flex items-end justify-between gap-3">
           <div>
             <p className="text-xs font-semibold text-mk-pink uppercase tracking-widest mb-1">Mary Kay</p>
             <h1 className="text-2xl font-bold text-gray-900">Catálogo</h1>
           </div>
-          {data && (
-            <p className="text-sm text-gray-400 pb-1">{data.total} productos</p>
-          )}
+          <div className="flex items-center gap-3 pb-0.5">
+            {data && <p className="hidden sm:block text-sm text-gray-400">{data.total} productos</p>}
+            <button
+              onClick={() => generateCatalogLink.mutate()}
+              disabled={generateCatalogLink.isPending}
+              className="flex items-center gap-2 px-4 py-2.5 bg-mk-pink text-white font-semibold rounded-xl text-sm hover:bg-pink-700 transition-colors shadow-sm shadow-pink-200 disabled:opacity-60"
+            >
+              <Sparkles size={15} />
+              <span>{generateCatalogLink.isPending ? "Generando..." : "Compartir catálogo"}</span>
+            </button>
+          </div>
         </div>
 
         {/* Buscador */}

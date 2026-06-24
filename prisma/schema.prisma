@@ -100,9 +100,10 @@ model Product {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  inventoryItems  InventoryItem[]
-  saleItems       SaleItem[]
-  productRequests ProductRequest[]
+  inventoryItems      InventoryItem[]
+  saleItems           SaleItem[]
+  productRequests     ProductRequest[]
+  productRequestItems ProductRequestItem[]
 
   @@index([category])
   @@index([slug])
@@ -257,21 +258,38 @@ enum RequestStatus {
 
 model ProductRequest {
   id           String        @id @default(cuid())
-  productId    String
+  // productId/quantity quedan como legado para solicitudes antiguas de un solo producto.
+  // Las nuevas solicitudes usan la relación items (ProductRequestItem).
+  productId    String?
   consultantId String
   clientName   String
   clientPhone  String?
   message      String?       @db.Text
   quantity     Int           @default(1)
   status       RequestStatus @default(PENDING)
+  source       String?       // "product" | "catalog"
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
 
-  product    Product @relation(fields: [productId], references: [id])
-  consultant User    @relation(fields: [consultantId], references: [id])
+  product    Product?             @relation(fields: [productId], references: [id])
+  consultant User                 @relation(fields: [consultantId], references: [id])
+  items      ProductRequestItem[]
 
   @@index([consultantId])
   @@index([status])
+}
+
+model ProductRequestItem {
+  id        String @id @default(cuid())
+  requestId String
+  productId String
+  quantity  Int    @default(1)
+
+  request ProductRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  product Product        @relation(fields: [productId], references: [id])
+
+  @@index([requestId])
+  @@index([productId])
 }
 
 // ─── PUBLIC LINKS ────────────────────────────────────────────────────────────
@@ -285,6 +303,17 @@ model PublicLink {
   createdAt    DateTime @default(now())
 
   @@index([consultantId])
+  @@index([slug])
+}
+
+// Enlace público al catálogo general de una consultora (una sola tienda por consultora)
+model CatalogLink {
+  id           String   @id @default(cuid())
+  consultantId String   @unique
+  slug         String   @unique
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
   @@index([slug])
 }
 

@@ -1,7 +1,15 @@
 import { prisma } from "@/lib/prisma";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
+import { Fraunces } from "next/font/google";
 import { PublicRequestForm } from "./PublicRequestForm";
+
+const fraunces = Fraunces({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  style: ["normal", "italic"],
+  display: "swap",
+});
 
 interface Props {
   params: { slug: string };
@@ -50,21 +58,17 @@ export default async function PublicProductPage({ params }: Props) {
 
   if (!product || !consultant) notFound();
 
-  const catalogItems = catalogInventory.map((item) => ({
-    product: {
-      id: item.product.id,
-      name: item.product.name,
-      images: item.product.images,
-      category: item.product.category,
-      subcategory: item.product.subcategory,
-      description: item.product.description,
-      benefits: item.product.benefits,
-      howToUse: item.product.howToUse,
-      howItWorks: item.product.howItWorks,
-      generalInfo: item.product.generalInfo,
-      ingredients: item.product.ingredients,
-    },
-    price: Number(item.product.salePrice) > 0 ? Number(item.product.salePrice) : null,
+  const others = catalogInventory.map((item) => ({
+    id: item.product.id,
+    name: item.product.name,
+    images: item.product.images,
+    price: Number(item.product.salePrice) > 0 ? Number(item.product.salePrice) : 0,
+    description: item.product.description,
+    benefits: item.product.benefits,
+    howToUse: item.product.howToUse,
+    howItWorks: item.product.howItWorks,
+    generalInfo: item.product.generalInfo,
+    ingredients: item.product.ingredients,
   }));
 
   return (
@@ -74,8 +78,7 @@ export default async function PublicProductPage({ params }: Props) {
         id: product.id,
         name: product.name,
         images: product.images,
-        category: product.category,
-        subcategory: product.subcategory,
+        price: Number(product.salePrice) > 0 ? Number(product.salePrice) : 0,
         description: product.description,
         benefits: product.benefits,
         howToUse: product.howToUse,
@@ -83,8 +86,8 @@ export default async function PublicProductPage({ params }: Props) {
         generalInfo: product.generalInfo,
         ingredients: product.ingredients,
       }}
-      mainProductPrice={Number(product.salePrice) > 0 ? Number(product.salePrice) : null}
-      catalogItems={catalogItems}
+      others={others}
+      fontClass={fraunces.className}
     />
   );
 }

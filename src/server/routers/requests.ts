@@ -30,6 +30,8 @@ export const requestsRouter = router({
         ...(status && { status }),
       };
 
+      const productSelect = { id: true, name: true, images: true, salePrice: true } as const;
+
       const [requests, total] = await Promise.all([
         ctx.prisma.productRequest.findMany({
           where,
@@ -37,14 +39,51 @@ export const requestsRouter = router({
           take: limit,
           orderBy: { createdAt: "desc" },
           include: {
-            product: { select: { id: true, name: true, images: true, salePrice: true } },
+            product: { select: productSelect },
+            items: { include: { product: { select: productSelect } } },
             consultant: { select: { id: true, name: true } },
           },
         }),
         ctx.prisma.productRequest.count({ where }),
       ]);
 
-      return { requests, total, pages: Math.ceil(total / limit) };
+      // Normaliza: cada solicitud expone `items`. Las solicitudes antiguas (un solo producto
+      // en la cabecera) se convierten en un ítem sintético para mantener la UI uniforme.
+      const normalized = requests.map((r) => {
+        const items =
+          r.items.length > 0
+            ? r.items.map((it) => ({
+                id: it.id,
+                productId: it.productId,
+                quantity: it.quantity,
+                product: it.product,
+              }))
+            : r.product
+              ? [{ id: r.id, productId: r.product.id, quantity: r.quantity, product: r.product }]
+              : [];
+
+        const estTotal = items.reduce(
+          (s, it) => s + (Number(it.product.salePrice) || 0) * it.quantity,
+          0
+        );
+        const allPriced = items.length > 0 && items.every((it) => Number(it.product.salePrice) > 0);
+
+        return {
+          id: r.id,
+          clientName: r.clientName,
+          clientPhone: r.clientPhone,
+          message: r.message,
+          status: r.status,
+          source: r.source,
+          createdAt: r.createdAt,
+          consultant: r.consultant,
+          items,
+          itemCount: items.reduce((s, it) => s + it.quantity, 0),
+          estimatedTotal: allPriced ? estTotal : null,
+        };
+      });
+
+      return { requests: normalized, total, pages: Math.ceil(total / limit) };
     }),
 
   pendingCount: protectedProcedure.query(async ({ ctx }) => {

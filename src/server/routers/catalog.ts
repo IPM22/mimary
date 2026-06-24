@@ -125,6 +125,30 @@ export const catalogRouter = router({
       return { slug, url: `/p/${slug}` };
     }),
 
+  // Enlace público al catálogo completo de la consultora (una tienda por consultora)
+  generateCatalogLink: protectedProcedure.mutation(async ({ ctx }) => {
+    const user = await ctx.prisma.user.findUnique({ where: { id: ctx.user.id } });
+    if (!user) throw new TRPCError({ code: "NOT_FOUND" });
+
+    const existing = await ctx.prisma.catalogLink.findUnique({
+      where: { consultantId: ctx.user.id },
+    });
+    if (existing) return { slug: existing.slug, url: `/c/${existing.slug}` };
+
+    const base = slugify(user.name) || "tienda";
+    let slug = base;
+    let attempt = 1;
+    while (await ctx.prisma.catalogLink.findUnique({ where: { slug } })) {
+      attempt += 1;
+      slug = `${base}-${attempt}`;
+    }
+
+    const created = await ctx.prisma.catalogLink.create({
+      data: { consultantId: ctx.user.id, slug },
+    });
+    return { slug: created.slug, url: `/c/${created.slug}` };
+  }),
+
   // Admin: crear producto manualmente
   create: directoraProcedure
     .input(

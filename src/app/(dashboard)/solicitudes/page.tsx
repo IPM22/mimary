@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState } from "react";
 import { trpc } from "@/lib/trpc/client";
 import {
   Inbox, MessageSquare, ChevronLeft, ChevronRight,
-  CheckCircle, X, Clock, User, ShoppingCart, Minus, Plus, UserPlus,
+  X, Clock, User, ShoppingCart, UserPlus, Store, Package,
 } from "lucide-react";
 import { ClientFormModal } from "@/components/clients/ClientFormModal";
+import { SaleFormModal, type SaleFormInitialItem } from "@/components/sales/SaleFormModal";
 import { formatDistanceToNow } from "date-fns";
 import { es } from "date-fns/locale";
 
@@ -26,95 +27,36 @@ const STATUS_COLOR: Record<Status, string> = {
   DISMISSED: "bg-gray-100 text-gray-500 border-gray-200",
 };
 
-const PAYMENT_LABELS: Record<string, string> = {
-  CASH: "Efectivo", TRANSFER: "Transferencia", CARD: "Tarjeta", CREDIT: "Crédito",
-};
-
 type RequestItem = {
   id: string;
   productId: string;
+  quantity: number;
+  product: { id: string; name: string; images: string[]; salePrice: number | string };
+};
+
+type RequestCard = {
+  id: string;
   clientName: string;
   clientPhone: string | null;
   message: string | null;
-  quantity: number;
   status: string;
-  createdAt: Date;
-  product: { id: string; name: string; images: string[]; salePrice: number | string };
+  source: string | null;
+  createdAt: string | Date;
   consultant: { id: string; name: string };
+  items: RequestItem[];
+  itemCount: number;
+  estimatedTotal: number | null;
 };
 
-// ── Combobox: seleccionar clienta registrada ───────────────────────────────────
-
-function ClientCombobox({ clientId, clientName, onClientChange, onNameChange }: {
-  clientId: string; clientName: string;
-  onClientChange: (id: string, name: string) => void;
-  onNameChange: (name: string) => void;
-}) {
-  const [search, setSearch] = useState(clientName);
-  const [open, setOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const { data } = trpc.clients.list.useQuery({ search, limit: 8 }, { enabled: open || search.length > 0 });
-
-  useEffect(() => {
-    function onClick(e: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) setOpen(false);
-    }
-    document.addEventListener("mousedown", onClick);
-    return () => document.removeEventListener("mousedown", onClick);
-  }, []);
-
-  const displayValue = clientId ? (data?.clients.find((c) => c.id === clientId)?.name ?? search) : search;
-
-  return (
-    <div ref={containerRef} className="space-y-1.5">
-      <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-1.5">
-        <User size={11} /> Cliente
-      </label>
-      <div className="relative">
-        <input
-          value={clientId ? displayValue : search}
-          onChange={(e) => {
-            setSearch(e.target.value);
-            if (clientId) onClientChange("", "");
-            onNameChange(e.target.value);
-            setOpen(true);
-          }}
-          onFocus={() => setOpen(true)}
-          placeholder="Buscar clienta registrada..."
-          className="w-full px-3 py-2.5 border-2 border-gray-100 rounded-xl text-sm bg-gray-50 focus:outline-none focus:border-mk-pink/50 focus:bg-white transition-colors"
-        />
-        {clientId && (
-          <button onClick={() => { onClientChange("", ""); setSearch(""); }}
-            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-500">
-            <X size={13} />
-          </button>
-        )}
-        {open && (data?.clients?.length ?? 0) > 0 && !clientId && (
-          <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg z-20 overflow-hidden max-h-40 overflow-y-auto">
-            {data!.clients.map((c) => (
-              <button key={c.id} type="button"
-                onClick={() => { onClientChange(c.id, c.name); setSearch(c.name); setOpen(false); }}
-                className="w-full text-left px-3 py-2.5 text-sm hover:bg-pink-50 hover:text-mk-pink transition-colors border-b border-gray-50 last:border-0">
-                {c.name}
-                {c.phone && <span className="text-xs text-gray-400 ml-2">{c.phone}</span>}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-      {!clientId && (
-        <p className="text-[11px] text-gray-400">
-          Selecciona una clienta registrada o deja el nombre para registrarla luego.
-        </p>
-      )}
-    </div>
-  );
+function fmt(price: number) {
+  return `RD$${price.toLocaleString("es-DO", { minimumFractionDigits: 0 })}`;
 }
 
-function waLink(phone: string, productName: string, clientName: string) {
+function waLink(phone: string, productNames: string[], clientName: string) {
   const digits = phone.replace(/\D/g, "");
   const e164 = /^(809|829|849)/.test(digits) ? "1" + digits : digits;
-  const text = `Hola ${clientName}, te escribo por el producto "${productName}" que solicitaste a través de MiMary.`;
+  const list = productNames.length === 1 ? `el producto "${productNames[0]}"` : `los productos que solicitaste`;
+  const text = `Hola ${clientName}, te escribo por ${list} a través de MiMary.`;
   return `https://wa.me/${e164}?text=${encodeURIComponent(text)}`;
 }
 
@@ -124,225 +66,12 @@ const WaIcon = () => (
   </svg>
 );
 
-// ── Modal: Registrar venta ─────────────────────────────────────────────────────
-
-function RegisterSaleModal({
-  request,
-  onClose,
-  onSuccess,
-}: {
-  request: RequestItem;
-  onClose: () => void;
-  onSuccess: () => void;
-}) {
-  const [quantity, setQuantity] = useState(request.quantity ?? 1);
-  const [unitPrice, setUnitPrice] = useState(() => {
-    const price = Number(request.product.salePrice);
-    return price > 0 ? String(price) : "";
-  });
-  const [clientId, setClientId] = useState("");
-  const [clientName, setClientName] = useState(request.clientName);
-  const [paymentMethod, setPaymentMethod] = useState<"CASH" | "TRANSFER" | "CARD" | "CREDIT">("CASH");
-  const [notes, setNotes] = useState("");
-
-  const [done, setDone] = useState(false);
-  const createSale = trpc.sales.create.useMutation();
-  const updateStatus = trpc.requests.updateStatus.useMutation();
-
-  const total = unitPrice ? quantity * parseFloat(unitPrice) : 0;
-  const isBusy = createSale.isPending || updateStatus.isPending;
-  const canSubmit = unitPrice && parseFloat(unitPrice) > 0 && quantity >= 1 && (clientId || clientName.trim()) && !isBusy;
-
-  const handleSubmit = () => {
-    createSale.mutate(
-      {
-        clientId: clientId || undefined,
-        clientName: clientName.trim() || undefined,
-        paymentMethod,
-        notes: notes || undefined,
-        requestId: request.id,
-        items: [{ productId: request.productId, quantity, unitPrice: parseFloat(unitPrice), discount: 0 }],
-      },
-      {
-        onSuccess: () => {
-          updateStatus.mutate(
-            { id: request.id, status: "SOLD" },
-            {
-              onSuccess: () => {
-                setDone(true);
-                onSuccess();
-              },
-            }
-          );
-        },
-      }
-    );
-  };
-
-  const inputCls = "mt-1 w-full px-3 py-2.5 border-2 border-gray-100 rounded-xl text-sm focus:outline-none focus:border-mk-pink/50 transition-colors bg-gray-50 focus:bg-white";
-
-  if (done) {
-    return (
-      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center z-[60] p-0 sm:p-4">
-        <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full sm:max-w-md shadow-2xl p-8 text-center">
-          <div className="w-16 h-16 rounded-full bg-emerald-50 flex items-center justify-center mx-auto mb-4">
-            <CheckCircle size={32} className="text-emerald-500" />
-          </div>
-          <h2 className="text-xl font-bold text-gray-900 mb-1">¡Venta registrada!</h2>
-          <p className="text-sm text-gray-500 mb-2">
-            {request.product.name} · <span className="font-semibold text-gray-700">RD${total.toLocaleString("es-DO", { minimumFractionDigits: 2 })}</span>
-          </p>
-          <p className="text-xs text-gray-400 mb-6">La solicitud fue marcada como vendida y se creó un seguimiento post-venta automático.</p>
-          <button onClick={onClose} className="w-full py-3 mk-gradient text-white font-bold rounded-2xl text-sm">
-            Cerrar
-          </button>
-        </div>
-      </div>
-    );
+function ItemThumb({ images, name }: { images: string[]; name: string }) {
+  const src = images?.[0];
+  if (!src) {
+    return <div className="w-full h-full flex items-center justify-center text-gray-200 text-xl">📦</div>;
   }
-
-  return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center z-[60] p-0 sm:p-4">
-      <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full sm:max-w-md shadow-2xl max-h-[90vh] overflow-y-auto">
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-gray-100">
-          <div>
-            <p className="text-xs font-semibold text-mk-pink uppercase tracking-widest">Solicitud</p>
-            <h2 className="text-lg font-bold text-gray-900">Registrar venta</h2>
-          </div>
-          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100">
-            <X size={16} className="text-gray-500" />
-          </button>
-        </div>
-
-        <div className="px-6 py-5 space-y-5">
-          {/* Producto + cliente (solo lectura) */}
-          <div className="bg-gray-50 rounded-2xl p-4 flex gap-3">
-            <div className="w-14 h-14 rounded-xl overflow-hidden bg-white flex-shrink-0">
-              {request.product.images[0] ? (
-                <img src={request.product.images[0]} alt={request.product.name} className="w-full h-full object-cover" />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center text-gray-200 text-xl">📦</div>
-              )}
-            </div>
-            <div className="min-w-0">
-              <p className="text-sm font-bold text-gray-900 leading-tight">{request.product.name}</p>
-              <p className="text-xs text-gray-500 mt-0.5">
-                Solicitado por {request.clientName}
-                {request.clientPhone && ` · ${request.clientPhone}`}
-              </p>
-            </div>
-          </div>
-
-          {/* Cliente */}
-          <ClientCombobox
-            clientId={clientId}
-            clientName={clientName}
-            onClientChange={(id, name) => { setClientId(id); setClientName(name); }}
-            onNameChange={(name) => setClientName(name)}
-          />
-
-          {/* Cantidad */}
-          <div>
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Cantidad</p>
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => setQuantity((q) => Math.max(1, q - 1))}
-                className="w-9 h-9 rounded-xl border-2 border-gray-100 flex items-center justify-center hover:bg-gray-50 transition-colors"
-              >
-                <Minus size={14} />
-              </button>
-              <span className="text-xl font-bold text-gray-900 w-8 text-center">{quantity}</span>
-              <button
-                onClick={() => setQuantity((q) => q + 1)}
-                className="w-9 h-9 rounded-xl border-2 border-gray-100 flex items-center justify-center hover:bg-gray-50 transition-colors"
-              >
-                <Plus size={14} />
-              </button>
-            </div>
-          </div>
-
-          {/* Precio unitario */}
-          <div>
-            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Precio unitario *</label>
-            <div className="relative mt-1">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400 font-medium">RD$</span>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={unitPrice}
-                onChange={(e) => setUnitPrice(e.target.value)}
-                placeholder="0.00"
-                className="w-full pl-10 pr-3 py-2.5 border-2 border-gray-100 rounded-xl text-sm focus:outline-none focus:border-mk-pink/50 transition-colors bg-gray-50 focus:bg-white"
-              />
-            </div>
-            {total > 0 && (
-              <p className="text-xs text-gray-400 mt-1">
-                Total: <span className="font-bold text-mk-pink">RD${total.toLocaleString("es-DO", { minimumFractionDigits: 2 })}</span>
-              </p>
-            )}
-          </div>
-
-          {/* Método de pago */}
-          <div>
-            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Método de pago</label>
-            <div className="grid grid-cols-2 gap-2 mt-2">
-              {(["CASH", "TRANSFER", "CARD", "CREDIT"] as const).map((m) => (
-                <button
-                  key={m}
-                  type="button"
-                  onClick={() => setPaymentMethod(m)}
-                  className={`py-2.5 rounded-xl text-xs font-semibold border-2 transition-all
-                    ${paymentMethod === m
-                      ? "border-mk-pink bg-pink-50 text-mk-pink"
-                      : "border-gray-100 text-gray-500 hover:border-gray-200"}`}
-                >
-                  {PAYMENT_LABELS[m]}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Notas */}
-          <div>
-            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Notas (opcional)</label>
-            <textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              rows={2}
-              placeholder="Observaciones sobre la venta..."
-              className={`${inputCls} resize-none`}
-            />
-          </div>
-
-          {(createSale.error || updateStatus.error) && (
-            <p className="text-red-500 text-sm bg-red-50 px-3 py-2 rounded-xl">
-              {createSale.error?.message ?? updateStatus.error?.message}
-            </p>
-          )}
-
-          {/* Botones */}
-          <div className="flex gap-2 pb-1">
-            <button
-              onClick={onClose}
-              disabled={isBusy}
-              className="flex-1 py-3 border-2 border-gray-100 text-gray-600 font-semibold rounded-2xl text-sm hover:bg-gray-50 transition-colors disabled:opacity-40"
-            >
-              Cancelar
-            </button>
-            <button
-              onClick={handleSubmit}
-              disabled={!canSubmit}
-              className="flex-1 py-3 mk-gradient text-white font-bold rounded-2xl text-sm disabled:opacity-60 hover:opacity-90 transition-opacity"
-            >
-              {createSale.isPending ? "Guardando venta..." : updateStatus.isPending ? "Actualizando..." : "Registrar venta"}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
+  return <img src={src} alt={name} className="w-full h-full object-cover" loading="lazy" />;
 }
 
 // ── Página principal ───────────────────────────────────────────────────────────
@@ -350,8 +79,8 @@ function RegisterSaleModal({
 export default function SolicitudesPage() {
   const [statusFilter, setStatusFilter] = useState<Status | undefined>("PENDING");
   const [page, setPage] = useState(1);
-  const [saleTarget, setSaleTarget] = useState<RequestItem | null>(null);
-  const [clientTarget, setClientTarget] = useState<RequestItem | null>(null);
+  const [saleTarget, setSaleTarget] = useState<RequestCard | null>(null);
+  const [clientTarget, setClientTarget] = useState<RequestCard | null>(null);
   const utils = trpc.useUtils();
 
   const { data, isLoading } = trpc.requests.list.useQuery(
@@ -374,6 +103,8 @@ export default function SolicitudesPage() {
     { value: "SOLD",       label: "Vendidas" },
     { value: "DISMISSED",  label: "Descartadas" },
   ];
+
+  const requests = (data?.requests ?? []) as unknown as RequestCard[];
 
   return (
     <div className="min-h-full p-4 md:p-8 space-y-5 pb-24 md:pb-8">
@@ -411,10 +142,10 @@ export default function SolicitudesPage() {
       {isLoading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
           {[...Array(6)].map((_, i) => (
-            <div key={i} className="h-36 bg-white rounded-2xl border border-gray-100 animate-pulse" />
+            <div key={i} className="h-48 bg-white rounded-2xl border border-gray-100 animate-pulse" />
           ))}
         </div>
-      ) : (data?.requests.length ?? 0) === 0 ? (
+      ) : requests.length === 0 ? (
         <div className="bg-white rounded-2xl p-12 border border-gray-100 shadow-sm text-center">
           <Inbox size={32} className="text-gray-200 mx-auto mb-3" />
           <p className="text-sm font-medium text-gray-400">
@@ -423,100 +154,119 @@ export default function SolicitudesPage() {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-          {data?.requests.map((req) => (
-            <div key={req.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-              <div className="p-4 flex gap-4">
-                {/* Imagen del producto */}
-                <div className="w-16 h-16 rounded-xl overflow-hidden bg-gray-50 flex-shrink-0">
-                  {req.product.images[0] ? (
-                    <img src={req.product.images[0]} alt={req.product.name} className="w-full h-full object-cover" loading="lazy" />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-gray-200 text-2xl">📦</div>
-                  )}
-                </div>
-
-                {/* Info */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-start justify-between gap-2 mb-1">
-                    <div className="min-w-0">
-                      <p className="text-sm font-bold text-gray-900 leading-tight line-clamp-2">{req.product.name}</p>
-                      {req.quantity > 1 && (
-                        <p className="text-xs text-mk-pink font-semibold mt-0.5">× {req.quantity} unidades</p>
+          {requests.map((req) => {
+            const names = req.items.map((it) => it.product.name);
+            return (
+              <div key={req.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden flex flex-col">
+                {/* Cabecera: cliente + estado */}
+                <div className="px-4 pt-4 pb-3 flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="flex items-center gap-1.5 text-sm font-bold text-gray-900">
+                        <User size={14} className="text-gray-400" />
+                        {req.clientName}
+                      </span>
+                      {req.source === "catalog" && (
+                        <span className="flex items-center gap-1 text-[10px] font-semibold text-mk-pink bg-pink-50 px-1.5 py-0.5 rounded-full">
+                          <Store size={9} /> Catálogo
+                        </span>
                       )}
                     </div>
-                    <select
-                      value={req.status}
-                      onChange={(e) => updateStatus.mutate({ id: req.id, status: e.target.value as Status })}
-                      disabled={updateStatus.isPending}
-                      className={`flex-shrink-0 text-xs font-semibold px-2 py-0.5 rounded-full border cursor-pointer appearance-none text-center disabled:opacity-60 ${STATUS_COLOR[req.status as Status]}`}
-                    >
-                      <option value="PENDING">Pendiente</option>
-                      <option value="CONTACTED">Contactado</option>
-                      <option value="SOLD">Vendido</option>
-                      <option value="DISMISSED">Descartado</option>
-                    </select>
-                  </div>
-
-                  {/* Cliente */}
-                  <div className="flex items-center gap-3 mt-2 flex-wrap">
-                    <span className="flex items-center gap-1 text-sm text-gray-700">
-                      <User size={13} className="text-gray-400" />
-                      {req.clientName}
-                    </span>
                     {req.clientPhone && (
                       <a
-                        href={waLink(req.clientPhone, req.product.name, req.clientName)}
+                        href={waLink(req.clientPhone, names, req.clientName)}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="flex items-center gap-1 text-xs font-semibold text-[#25D366] hover:text-[#1ebe5d] transition-colors"
+                        className="inline-flex items-center gap-1 text-xs font-semibold text-[#25D366] hover:text-[#1ebe5d] transition-colors mt-1"
                       >
                         <WaIcon /> {req.clientPhone}
                       </a>
                     )}
                   </div>
+                  <select
+                    value={req.status}
+                    onChange={(e) => updateStatus.mutate({ id: req.id, status: e.target.value as Status })}
+                    disabled={updateStatus.isPending}
+                    className={`flex-shrink-0 text-xs font-semibold px-2 py-0.5 rounded-full border cursor-pointer appearance-none text-center disabled:opacity-60 ${STATUS_COLOR[req.status as Status]}`}
+                  >
+                    <option value="PENDING">Pendiente</option>
+                    <option value="CONTACTED">Contactado</option>
+                    <option value="SOLD">Vendido</option>
+                    <option value="DISMISSED">Descartado</option>
+                  </select>
+                </div>
 
-                  {/* Mensaje */}
-                  {req.message && (
-                    <div className="flex items-start gap-1.5 mt-2 text-xs text-gray-500 bg-gray-50 rounded-lg px-2.5 py-1.5">
-                      <MessageSquare size={11} className="flex-shrink-0 mt-0.5 text-gray-400" />
-                      <span className="line-clamp-2">{req.message}</span>
+                {/* Ítems de la solicitud */}
+                <div className="px-4 space-y-1.5">
+                  <div className="flex items-center gap-1.5 text-[11px] font-semibold text-gray-400 uppercase tracking-wide">
+                    <Package size={11} /> {req.itemCount} producto{req.itemCount !== 1 ? "s" : ""}
+                  </div>
+                  <div className="divide-y divide-gray-50 rounded-xl bg-gray-50/60 border border-gray-100 overflow-hidden">
+                    {req.items.map((it) => {
+                      const price = Number(it.product.salePrice) || 0;
+                      return (
+                        <div key={it.id} className="flex items-center gap-2.5 px-2.5 py-2">
+                          <div className="w-9 h-9 rounded-lg overflow-hidden bg-white flex-shrink-0 border border-gray-100">
+                            <ItemThumb images={it.product.images} name={it.product.name} />
+                          </div>
+                          <p className="text-xs font-medium text-gray-800 leading-tight line-clamp-2 flex-1 min-w-0">{it.product.name}</p>
+                          <div className="text-right flex-shrink-0">
+                            <p className="text-[11px] font-bold text-gray-700">×{it.quantity}</p>
+                            {price > 0 && <p className="text-[11px] text-mk-pink font-semibold">{fmt(price * it.quantity)}</p>}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {req.estimatedTotal !== null && (
+                    <div className="flex items-center justify-between px-1 pt-0.5">
+                      <span className="text-[11px] text-gray-400 font-medium">Total estimado</span>
+                      <span className="text-sm font-bold text-mk-pink">{fmt(req.estimatedTotal)}</span>
                     </div>
                   )}
+                </div>
 
-                  {/* Fecha + consultora */}
-                  <div className="flex items-center gap-2 mt-2 text-xs text-gray-400">
-                    <Clock size={11} />
-                    {formatDistanceToNow(new Date(req.createdAt), { addSuffix: true, locale: es })}
-                    {req.consultant.name && <span className="text-gray-300">·</span>}
-                    <span className="truncate">{req.consultant.name}</span>
+                {/* Mensaje */}
+                {req.message && (
+                  <div className="flex items-start gap-1.5 mx-4 mt-2.5 text-xs text-gray-500 bg-gray-50 rounded-lg px-2.5 py-1.5">
+                    <MessageSquare size={11} className="flex-shrink-0 mt-0.5 text-gray-400" />
+                    <span className="line-clamp-2">{req.message}</span>
                   </div>
+                )}
+
+                {/* Fecha + consultora */}
+                <div className="flex items-center gap-2 px-4 mt-2.5 text-xs text-gray-400">
+                  <Clock size={11} />
+                  {formatDistanceToNow(new Date(req.createdAt), { addSuffix: true, locale: es })}
+                  {req.consultant.name && <span className="text-gray-300">·</span>}
+                  <span className="truncate">{req.consultant.name}</span>
+                </div>
+
+                {/* Acciones */}
+                <div className="px-4 py-3 mt-3 border-t border-gray-50 flex items-center gap-2">
+                  <button
+                    onClick={() => setSaleTarget(req)}
+                    className="flex items-center gap-1.5 px-3 py-2 mk-gradient text-white text-xs font-bold rounded-xl hover:opacity-90 transition-opacity shadow-sm shadow-pink-200"
+                  >
+                    <ShoppingCart size={12} /> Registrar venta
+                  </button>
+                  <button
+                    onClick={() => setClientTarget(req)}
+                    className="flex items-center gap-1.5 px-3 py-2 bg-gray-900 text-white text-xs font-bold rounded-xl hover:bg-gray-800 transition-colors"
+                  >
+                    <UserPlus size={12} /> Crear cliente
+                  </button>
+                  <button
+                    onClick={() => updateStatus.mutate({ id: req.id, status: "DISMISSED" })}
+                    disabled={updateStatus.isPending}
+                    className="flex items-center gap-1.5 px-3 py-2 text-gray-400 text-xs font-semibold rounded-xl hover:text-red-500 hover:bg-red-50 transition-colors disabled:opacity-60 ml-auto"
+                  >
+                    <X size={12} /> Descartar
+                  </button>
                 </div>
               </div>
-
-              {/* Acciones */}
-              <div className="px-4 py-3 border-t border-gray-50 flex items-center gap-2">
-                <button
-                  onClick={() => setSaleTarget(req as unknown as RequestItem)}
-                  className="flex items-center gap-1.5 px-3 py-2 mk-gradient text-white text-xs font-bold rounded-xl hover:opacity-90 transition-opacity shadow-sm shadow-pink-200"
-                >
-                  <ShoppingCart size={12} /> Registrar venta
-                </button>
-                <button
-                  onClick={() => setClientTarget(req as unknown as RequestItem)}
-                  className="flex items-center gap-1.5 px-3 py-2 bg-gray-900 text-white text-xs font-bold rounded-xl hover:bg-gray-800 transition-colors"
-                >
-                  <UserPlus size={12} /> Crear cliente
-                </button>
-                <button
-                  onClick={() => updateStatus.mutate({ id: req.id, status: "DISMISSED" })}
-                  disabled={updateStatus.isPending}
-                  className="flex items-center gap-1.5 px-3 py-2 text-gray-400 text-xs font-semibold rounded-xl hover:text-red-500 hover:bg-red-50 transition-colors disabled:opacity-60 ml-auto"
-                >
-                  <X size={12} /> Descartar
-                </button>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -537,12 +287,24 @@ export default function SolicitudesPage() {
         </div>
       )}
 
-      {/* Modal registrar venta */}
+      {/* Modal registrar venta (componente reutilizado de Ventas, precargado) */}
       {saleTarget && (
-        <RegisterSaleModal
-          request={saleTarget}
+        <SaleFormModal
+          eyebrow="Solicitud"
+          title="Registrar venta"
+          requestId={saleTarget.id}
+          initialClientName={saleTarget.clientName}
+          initialItems={saleTarget.items.map<SaleFormInitialItem>((it) => ({
+            productId: it.productId,
+            name: it.product.name,
+            images: it.product.images,
+            quantity: it.quantity,
+            unitPrice: Number(it.product.salePrice) || 0,
+          }))}
           onClose={() => setSaleTarget(null)}
           onSuccess={() => {
+            // La venta se enlazó con la solicitud: márcala como vendida.
+            updateStatus.mutate({ id: saleTarget.id, status: "SOLD" });
             utils.requests.list.invalidate();
             utils.requests.pendingCount.invalidate();
             setSaleTarget(null);
@@ -558,7 +320,7 @@ export default function SolicitudesPage() {
           defaultValues={{
             name: clientTarget.clientName,
             phone: clientTarget.clientPhone ?? "",
-            source: "Solicitud pública",
+            source: clientTarget.source === "catalog" ? "Catálogo público" : "Solicitud pública",
           }}
         />
       )}

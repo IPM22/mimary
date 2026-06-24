@@ -39,26 +39,30 @@ export const publicLinksRouter = router({
         clientName: z.string().min(2),
         clientPhone: z.string().optional(),
         message: z.string().optional(),
+        source: z.enum(["product", "catalog"]).default("product"),
         items: z
           .array(z.object({ productId: z.string(), quantity: z.number().int().min(1).default(1) }))
           .min(1),
       })
     )
     .mutation(async ({ ctx, input }) => {
-      await ctx.prisma.$transaction(
-        input.items.map((item) =>
-          ctx.prisma.productRequest.create({
-            data: {
+      // Una sola solicitud con múltiples ítems, sin importar cuántos productos agregue la clienta.
+      await ctx.prisma.productRequest.create({
+        data: {
+          consultantId: input.consultantId,
+          clientName: input.clientName,
+          clientPhone: input.clientPhone ?? null,
+          message: input.message ?? null,
+          source: input.source,
+          quantity: input.items.reduce((s, i) => s + i.quantity, 0),
+          items: {
+            create: input.items.map((item) => ({
               productId: item.productId,
-              consultantId: input.consultantId,
-              clientName: input.clientName,
-              clientPhone: input.clientPhone ?? null,
-              message: input.message ?? null,
               quantity: item.quantity,
-            },
-          })
-        )
-      );
+            })),
+          },
+        },
+      });
       return { success: true };
     }),
 });
