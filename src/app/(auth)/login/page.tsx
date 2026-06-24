@@ -7,7 +7,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { trpc } from "@/lib/trpc/client";
-import { CheckCircle, X } from "lucide-react";
+import { CheckCircle, X, Mail as MailIcon } from "lucide-react";
 
 const schema = z.object({
   email: z.string().email("Correo inválido"),
@@ -100,6 +100,90 @@ function RequestAccessModal({ onClose }: { onClose: () => void }) {
   );
 }
 
+// ── Modal: Recuperar contraseña ───────────────────────────────────────────────
+
+function ForgotPasswordModal({ onClose }: { onClose: () => void }) {
+  const [email, setEmail] = useState("");
+  const [done, setDone] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const inputCls = "mt-1 w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-mk-pink/30";
+
+  const handleSend = async () => {
+    setLoading(true);
+    setError(null);
+    const supabase = createClient();
+    const { error: authError } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/reset-password`,
+    });
+    setLoading(false);
+    if (authError) {
+      if (authError.status === 429) {
+        setError("Has solicitado demasiados correos. Espera unos minutos antes de volver a intentarlo.");
+      } else {
+        setError("No se pudo enviar el correo. Verifica la dirección e intenta de nuevo.");
+      }
+      return;
+    }
+    setDone(true);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center z-[60] p-0 sm:p-4">
+      <div className="bg-white rounded-t-3xl sm:rounded-3xl p-6 w-full sm:max-w-md shadow-2xl">
+        <div className="flex items-center justify-between mb-5">
+          <div>
+            <p className="text-xs font-semibold text-mk-pink uppercase tracking-widest">Acceso</p>
+            <h2 className="text-lg font-bold text-gray-900">Recuperar contraseña</h2>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100">
+            <X size={16} className="text-gray-500" />
+          </button>
+        </div>
+
+        {done ? (
+          <div className="text-center py-6 space-y-3">
+            <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto">
+              <MailIcon size={32} className="text-green-500" />
+            </div>
+            <h3 className="text-lg font-bold text-gray-900">¡Correo enviado!</h3>
+            <p className="text-sm text-gray-500">
+              Si existe una cuenta con <span className="font-medium text-gray-700">{email}</span>, recibirás un enlace para restablecer tu contraseña. Revisa también tu carpeta de spam.
+            </p>
+            <button onClick={onClose} className="mt-2 w-full py-2.5 mk-gradient text-white font-semibold rounded-xl text-sm">
+              Entendido
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <p className="text-sm text-gray-500">
+              Ingresa el correo de tu cuenta y te enviaremos un enlace para crear una nueva contraseña.
+            </p>
+
+            <div>
+              <label className="text-sm font-medium text-gray-700">Correo electrónico</label>
+              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="tu@correo.com" className={inputCls} />
+            </div>
+
+            {error && (
+              <p className="text-red-500 text-sm bg-red-50 px-3 py-2 rounded-xl">{error}</p>
+            )}
+
+            <button
+              onClick={handleSend}
+              disabled={!email.trim() || loading}
+              className="w-full py-3 mk-gradient text-white font-semibold rounded-xl text-sm disabled:opacity-60 hover:opacity-90 transition-opacity"
+            >
+              {loading ? "Enviando..." : "Enviar enlace"}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Login ─────────────────────────────────────────────────────────────────────
 
 export default function LoginPage() {
@@ -107,6 +191,7 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [showRequest, setShowRequest] = useState(false);
+  const [showForgot, setShowForgot] = useState(false);
 
   const {
     register,
@@ -173,6 +258,15 @@ export default function LoginPage() {
               {errors.password && (
                 <p className="text-red-500 text-xs mt-1">{errors.password.message}</p>
               )}
+              <div className="text-right mt-1.5">
+                <button
+                  type="button"
+                  onClick={() => setShowForgot(true)}
+                  className="text-xs text-mk-pink font-semibold hover:underline"
+                >
+                  ¿Olvidaste tu contraseña?
+                </button>
+              </div>
             </div>
 
             {error && (
@@ -200,6 +294,7 @@ export default function LoginPage() {
       </div>
 
       {showRequest && <RequestAccessModal onClose={() => setShowRequest(false)} />}
+      {showForgot && <ForgotPasswordModal onClose={() => setShowForgot(false)} />}
     </div>
   );
 }

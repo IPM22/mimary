@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { trpc } from "@/lib/trpc/client";
 import {
   Inbox, MessageSquare, ChevronLeft, ChevronRight,
@@ -39,9 +39,77 @@ type RequestItem = {
   quantity: number;
   status: string;
   createdAt: Date;
-  product: { id: string; name: string; images: string[] };
+  product: { id: string; name: string; images: string[]; salePrice: number | string };
   consultant: { id: string; name: string };
 };
+
+// ── Combobox: seleccionar clienta registrada ───────────────────────────────────
+
+function ClientCombobox({ clientId, clientName, onClientChange, onNameChange }: {
+  clientId: string; clientName: string;
+  onClientChange: (id: string, name: string) => void;
+  onNameChange: (name: string) => void;
+}) {
+  const [search, setSearch] = useState(clientName);
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const { data } = trpc.clients.list.useQuery({ search, limit: 8 }, { enabled: open || search.length > 0 });
+
+  useEffect(() => {
+    function onClick(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, []);
+
+  const displayValue = clientId ? (data?.clients.find((c) => c.id === clientId)?.name ?? search) : search;
+
+  return (
+    <div ref={containerRef} className="space-y-1.5">
+      <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-1.5">
+        <User size={11} /> Cliente
+      </label>
+      <div className="relative">
+        <input
+          value={clientId ? displayValue : search}
+          onChange={(e) => {
+            setSearch(e.target.value);
+            if (clientId) onClientChange("", "");
+            onNameChange(e.target.value);
+            setOpen(true);
+          }}
+          onFocus={() => setOpen(true)}
+          placeholder="Buscar clienta registrada..."
+          className="w-full px-3 py-2.5 border-2 border-gray-100 rounded-xl text-sm bg-gray-50 focus:outline-none focus:border-mk-pink/50 focus:bg-white transition-colors"
+        />
+        {clientId && (
+          <button onClick={() => { onClientChange("", ""); setSearch(""); }}
+            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-500">
+            <X size={13} />
+          </button>
+        )}
+        {open && (data?.clients?.length ?? 0) > 0 && !clientId && (
+          <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg z-20 overflow-hidden max-h-40 overflow-y-auto">
+            {data!.clients.map((c) => (
+              <button key={c.id} type="button"
+                onClick={() => { onClientChange(c.id, c.name); setSearch(c.name); setOpen(false); }}
+                className="w-full text-left px-3 py-2.5 text-sm hover:bg-pink-50 hover:text-mk-pink transition-colors border-b border-gray-50 last:border-0">
+                {c.name}
+                {c.phone && <span className="text-xs text-gray-400 ml-2">{c.phone}</span>}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      {!clientId && (
+        <p className="text-[11px] text-gray-400">
+          Selecciona una clienta registrada o deja el nombre para registrarla luego.
+        </p>
+      )}
+    </div>
+  );
+}
 
 function waLink(phone: string, productName: string, clientName: string) {
   const digits = phone.replace(/\D/g, "");
@@ -68,7 +136,12 @@ function RegisterSaleModal({
   onSuccess: () => void;
 }) {
   const [quantity, setQuantity] = useState(request.quantity ?? 1);
-  const [unitPrice, setUnitPrice] = useState("");
+  const [unitPrice, setUnitPrice] = useState(() => {
+    const price = Number(request.product.salePrice);
+    return price > 0 ? String(price) : "";
+  });
+  const [clientId, setClientId] = useState("");
+  const [clientName, setClientName] = useState(request.clientName);
   const [paymentMethod, setPaymentMethod] = useState<"CASH" | "TRANSFER" | "CARD" | "CREDIT">("CASH");
   const [notes, setNotes] = useState("");
 
@@ -78,12 +151,13 @@ function RegisterSaleModal({
 
   const total = unitPrice ? quantity * parseFloat(unitPrice) : 0;
   const isBusy = createSale.isPending || updateStatus.isPending;
-  const canSubmit = unitPrice && parseFloat(unitPrice) > 0 && quantity >= 1 && !isBusy;
+  const canSubmit = unitPrice && parseFloat(unitPrice) > 0 && quantity >= 1 && (clientId || clientName.trim()) && !isBusy;
 
   const handleSubmit = () => {
     createSale.mutate(
       {
-        clientName: request.clientName,
+        clientId: clientId || undefined,
+        clientName: clientName.trim() || undefined,
         paymentMethod,
         notes: notes || undefined,
         requestId: request.id,
@@ -153,12 +227,20 @@ function RegisterSaleModal({
             </div>
             <div className="min-w-0">
               <p className="text-sm font-bold text-gray-900 leading-tight">{request.product.name}</p>
-              <p className="text-xs text-gray-500 mt-0.5 flex items-center gap-1">
-                <User size={11} /> {request.clientName}
+              <p className="text-xs text-gray-500 mt-0.5">
+                Solicitado por {request.clientName}
                 {request.clientPhone && ` · ${request.clientPhone}`}
               </p>
             </div>
           </div>
+
+          {/* Cliente */}
+          <ClientCombobox
+            clientId={clientId}
+            clientName={clientName}
+            onClientChange={(id, name) => { setClientId(id); setClientName(name); }}
+            onNameChange={(name) => setClientName(name)}
+          />
 
           {/* Cantidad */}
           <div>

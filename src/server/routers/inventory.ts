@@ -155,7 +155,7 @@ export const inventoryRouter = router({
         inventoryItemId: z.string(),
         type: z.enum(["IN", "OUT", "ADJUST"]),
         quantity: z.number().int().min(1),
-        reason: z.string().min(2),
+        reason: z.string().optional(),
         expiresAt: z.string().optional(), // only for IN
       })
     )
@@ -178,12 +178,13 @@ export const inventoryRouter = router({
           where: { id: item.id },
           data: { quantity: newQty },
         });
+        const defaultReason = input.type === "IN" ? "Entrada" : input.type === "OUT" ? "Salida" : "Ajuste";
         await tx.inventoryMovement.create({
           data: {
             inventoryItemId: item.id,
             type: input.type,
             quantity: input.quantity,
-            reason: input.reason,
+            reason: input.reason?.trim() || defaultReason,
           },
         });
         if (input.type === "IN" && input.expiresAt) {

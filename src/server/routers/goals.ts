@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { router, protectedProcedure, directoraProcedure } from "../trpc";
+import { router, protectedProcedure } from "../trpc";
 import { TRPCError } from "@trpc/server";
 
 export const goalsRouter = router({
@@ -30,7 +30,7 @@ export const goalsRouter = router({
       });
     }),
 
-  create: directoraProcedure
+  create: protectedProcedure
     .input(
       z.object({
         targetUserId: z.string().optional(),
@@ -47,9 +47,13 @@ export const goalsRouter = router({
       // Parse date-only strings at noon UTC to avoid day-shift across timezones
       const startDate = new Date(input.startDate + "T12:00:00.000Z");
       const endDate = new Date(input.endDate + "T23:59:59.999Z");
+      const isDirectora = ctx.user.role === "DIRECTORA" || ctx.user.role === "ADMIN";
+      // Las consultoras solo pueden crear metas personales para ellas mismas
+      const targetUserId = isDirectora ? input.targetUserId : ctx.user.id;
       return ctx.prisma.goal.create({
         data: {
           ...input,
+          targetUserId,
           directoraId: ctx.user.id,
           startDate,
           endDate,
@@ -57,7 +61,7 @@ export const goalsRouter = router({
       });
     }),
 
-  update: directoraProcedure
+  update: protectedProcedure
     .input(
       z.object({
         id: z.string(),
@@ -71,25 +75,33 @@ export const goalsRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const { id, startDate, endDate, ...rest } = input;
+      const { id, startDate, endDate, targetUserId, ...rest } = input;
       const existing = await ctx.prisma.goal.findUnique({ where: { id } });
       if (!existing) throw new TRPCError({ code: "NOT_FOUND" });
       if (existing.directoraId !== ctx.user.id && ctx.user.role !== "ADMIN") {
         throw new TRPCError({ code: "FORBIDDEN" });
       }
+      const isDirectora = ctx.user.role === "DIRECTORA" || ctx.user.role === "ADMIN";
       return ctx.prisma.goal.update({
         where: { id },
         data: {
           ...rest,
+          // Solo las directoras/admin pueden reasignar el destinatario de la meta
+          ...(isDirectora && targetUserId !== undefined && { targetUserId }),
           ...(startDate && { startDate: new Date(startDate + "T12:00:00.000Z") }),
           ...(endDate && { endDate: new Date(endDate + "T23:59:59.999Z") }),
         },
       });
     }),
 
-  delete: directoraProcedure
+  delete: protectedProcedure
     .input(z.object({ id: z.string() }))
     .mutation(async ({ ctx, input }) => {
+      const existing = await ctx.prisma.goal.findUnique({ where: { id: input.id } });
+      if (!existing) throw new TRPCError({ code: "NOT_FOUND" });
+      if (existing.directoraId !== ctx.user.id && ctx.user.role !== "ADMIN") {
+        throw new TRPCError({ code: "FORBIDDEN" });
+      }
       return ctx.prisma.goal.delete({ where: { id: input.id } });
     }),
 

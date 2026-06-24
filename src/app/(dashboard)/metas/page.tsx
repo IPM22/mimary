@@ -71,9 +71,9 @@ function GoalCardSkeleton() {
   );
 }
 
-function GoalCard({ item, isDirectora, onEdit, onDelete }: {
+function GoalCard({ item, canManage, onEdit, onDelete }: {
   item: { goal: any; current: number; target: number; percentage: number };
-  isDirectora: boolean;
+  canManage: boolean;
   onEdit: (goal: any) => void;
   onDelete: (id: string) => void;
 }) {
@@ -145,7 +145,7 @@ function GoalCard({ item, isDirectora, onEdit, onDelete }: {
         <span className={`text-[10px] font-bold uppercase tracking-widest flex items-center gap-1 ${segInfo.text}`}>
           <SegIcon size={11} />{segInfo.label}
         </span>
-        {isDirectora && (
+        {canManage && (
           <div ref={menuRef} className="relative">
             <button onClick={() => setMenuOpen((v) => !v)}
               className="w-7 h-7 flex items-center justify-center rounded-lg text-gray-300 hover:bg-gray-100 hover:text-gray-600 transition-colors">
@@ -242,8 +242,11 @@ function GoalModal({ editing, onClose, onSuccess }: {
   const [startDate, setStartDate] = useState(editing ? new Date(editing.startDate).toISOString().split("T")[0] : "");
   const [endDate, setEndDate] = useState(editing ? new Date(editing.endDate).toISOString().split("T")[0] : "");
   const [targetUserId, setTargetUserId] = useState(editing?.targetUserId ?? "");
-  const { data: consultants } = trpc.consultants.list.useQuery();
   const { data: me } = trpc.auth.me.useQuery();
+  const isDirectora = me?.role === "DIRECTORA" || me?.role === "ADMIN";
+  const { data: consultants } = trpc.consultants.list.useQuery(undefined, { enabled: isDirectora });
+  // Las consultoras no manejan metas grupales (de equipo)
+  const typeOptions = isDirectora ? TYPE_OPTIONS : TYPE_OPTIONS.filter((t) => t !== "GROUP_SALES");
 
   const create = trpc.goals.create.useMutation({ onSuccess: () => { onSuccess(); onClose(); } });
   const update = trpc.goals.update.useMutation({ onSuccess: () => { onSuccess(); onClose(); } });
@@ -281,7 +284,7 @@ function GoalModal({ editing, onClose, onSuccess }: {
           <div>
             <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5 block">Tipo de meta</label>
             <div className="grid grid-cols-2 gap-1.5">
-              {TYPE_OPTIONS.map((key) => {
+              {typeOptions.map((key) => {
                 const cfg = TYPE_CONFIG[key];
                 const Icon = cfg.icon;
                 const active = type === key;
@@ -314,17 +317,19 @@ function GoalModal({ editing, onClose, onSuccess }: {
             </div>
           </div>
 
-          <div>
-            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-1.5 mb-1.5">
-              <Users size={10} /> Para
-            </label>
-            <select value={targetUserId} onChange={(e) => setTargetUserId(e.target.value)}
-              className="w-full px-3 py-2 border-2 border-gray-100 rounded-xl text-sm bg-gray-50 focus:outline-none focus:border-mk-pink/50 focus:bg-white transition-colors">
-              <option value="">Todo el equipo</option>
-              {me && <option value={me.id}>{me.name} (yo)</option>}
-              {consultants?.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
-          </div>
+          {isDirectora && (
+            <div>
+              <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-1.5 mb-1.5">
+                <Users size={10} /> Para
+              </label>
+              <select value={targetUserId} onChange={(e) => setTargetUserId(e.target.value)}
+                className="w-full px-3 py-2 border-2 border-gray-100 rounded-xl text-sm bg-gray-50 focus:outline-none focus:border-mk-pink/50 focus:bg-white transition-colors">
+                <option value="">Todo el equipo</option>
+                {me && <option value={me.id}>{me.name} (yo)</option>}
+                {consultants?.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-2">
             <div>
@@ -451,12 +456,10 @@ export default function MetasPage() {
           <p className="text-xs font-semibold text-mk-pink uppercase tracking-widest mb-1">Progreso</p>
           <h1 className="text-2xl font-bold text-gray-900">Metas</h1>
         </div>
-        {isDirectora && (
-          <button onClick={() => { setEditing(null); setShowForm(true); }}
-            className="flex items-center gap-2 px-4 py-2.5 bg-mk-pink text-white font-semibold rounded-xl text-sm hover:bg-pink-700 transition-colors shadow-sm shadow-pink-200">
-            <Plus size={15} /><span>Nueva meta</span>
-          </button>
-        )}
+        <button onClick={() => { setEditing(null); setShowForm(true); }}
+          className="flex items-center gap-2 px-4 py-2.5 bg-mk-pink text-white font-semibold rounded-xl text-sm hover:bg-pink-700 transition-colors shadow-sm shadow-pink-200">
+          <Plus size={15} /><span>Nueva meta</span>
+        </button>
       </div>
 
       {/* KPI strip */}
@@ -571,12 +574,10 @@ export default function MetasPage() {
             <Trophy size={24} className="text-mk-pink/40" />
           </div>
           <p className="text-gray-500 font-medium">No hay metas creadas</p>
-          {isDirectora && (
-            <button onClick={() => { setEditing(null); setShowForm(true); }}
-              className="mt-3 text-sm text-mk-pink underline underline-offset-2">
-              Crear la primera meta
-            </button>
-          )}
+          <button onClick={() => { setEditing(null); setShowForm(true); }}
+            className="mt-3 text-sm text-mk-pink underline underline-offset-2">
+            Crear la primera meta
+          </button>
         </div>
       ) : filtered.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16">
@@ -598,7 +599,8 @@ export default function MetasPage() {
               )}
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
                 {g.items.map((item) => (
-                  <GoalCard key={item.goal.id} item={item} isDirectora={isDirectora}
+                  <GoalCard key={item.goal.id} item={item}
+                    canManage={isDirectora || item.goal.directoraId === user?.id}
                     onEdit={(goal) => { setEditing(goal); setShowForm(true); }}
                     onDelete={(id) => setConfirmDelete(id)} />
                 ))}

@@ -37,7 +37,7 @@ export const requestsRouter = router({
           take: limit,
           orderBy: { createdAt: "desc" },
           include: {
-            product: { select: { id: true, name: true, images: true } },
+            product: { select: { id: true, name: true, images: true, salePrice: true } },
             consultant: { select: { id: true, name: true } },
           },
         }),

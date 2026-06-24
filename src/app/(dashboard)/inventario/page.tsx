@@ -87,12 +87,13 @@ function AdjustModal({ item, onClose, onSuccess }: {
             </div>
           )}
           <div>
-            <label className={labelCls}>Motivo *</label>
+            <label className={labelCls}>Motivo</label>
             <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Ej: Compra de pedido, venta, pérdida..." className={inputCls} />
+            <p className="text-xs text-gray-400 mt-1">Opcional</p>
           </div>
         </div>
-        <button onClick={() => adjust.mutate({ inventoryItemId: item.id, type, quantity, reason, expiresAt: expiresAt || undefined })}
-          disabled={!reason.trim() || adjust.isPending}
+        <button onClick={() => adjust.mutate({ inventoryItemId: item.id, type, quantity, reason: reason.trim() || undefined, expiresAt: expiresAt || undefined })}
+          disabled={adjust.isPending}
           className="w-full py-3 bg-mk-pink text-white font-semibold rounded-xl disabled:opacity-50 hover:bg-pink-700">
           {adjust.isPending ? "Guardando..." : "Aplicar ajuste"}
         </button>
